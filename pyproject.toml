@@ -1,0 +1,85 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bdsubmerge"
+version = "0.1.0.dev0"
+description = "Build external subtitles against a Blu-ray MPLS timeline"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+authors = [{ name = "YuSaZh", email = "aimescc@icloud.com" }]
+keywords = ["blu-ray", "bdmv", "mpls", "subtitle", "ass", "pgs"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Environment :: Win32 (MS Windows)",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Video",
+]
+dependencies = [
+  "charset-normalizer>=3.4,<4",
+  "platformdirs>=4.3,<5",
+  "pydantic>=2.10,<3",
+  "pysubs2>=1.8,<2",
+  "shinya>=0.0.5,<1",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.8,<7"]
+dev = [
+  "mypy>=1.14,<2",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<7",
+  "pytest-qt>=4.4,<5",
+  "ruff>=0.9,<1",
+]
+packaging = ["PyInstaller>=6.11,<7"]
+
+[project.scripts]
+bdsubmerge = "bdsubmerge.cli:main"
+bdsubmerge-gui = "bdsubmerge.app:main"
+
+[project.urls]
+Homepage = "https://github.com/YuSaZh/BDSubMerge"
+Issues = "https://github.com/YuSaZh/BDSubMerge/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bdsubmerge"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers --cov=bdsubmerge --cov-report=term-missing"
+testpaths = ["tests"]
+markers = [
+  "contract: verifies behavior of a third-party adapter",
+  "golden: compares a serialized result with an approved fixture",
+  "ui: requires the Qt GUI dependency",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "DTZ", "PTH", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["bdsubmerge"]
+mypy_path = "src"
+warn_unreachable = true
+
+[tool.coverage.run]
+branch = true
+source = ["bdsubmerge"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 80
