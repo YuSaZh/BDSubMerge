@@ -6,6 +6,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
 
+from bdsubmerge.domain.timebase import MediaTick90k
+
 from .confidence import classify_confidence, lowest_confidence
 from .models import (
     EpisodeMapping,
@@ -14,7 +16,6 @@ from .models import (
     MappingCostConfig,
     MappingLock,
     MappingResult,
-    MediaTick90k,
     TimelineBoundary,
 )
 

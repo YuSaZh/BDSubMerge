@@ -58,37 +58,38 @@ def build_playlist(
     play_items: list[PlayItemInfo] = []
     logical_start = MediaTick90k(0)
 
-    for index, raw in enumerate(raw_items):
-        if raw.out_time_45k <= raw.in_time_45k:
+    for index, raw_item in enumerate(raw_items):
+        if raw_item.out_time_45k <= raw_item.in_time_45k:
             errors.append(f"PlayItem {index} OUT time must be greater than IN time")
             duration = MediaTick90k(0)
         else:
-            duration = from_45k(raw.out_time_45k - raw.in_time_45k)
-        references = _reference_status(stream_path, clipinf_path, raw.clip_id)
+            duration = from_45k(raw_item.out_time_45k - raw_item.in_time_45k)
+        references = _reference_status(stream_path, clipinf_path, raw_item.clip_id)
         if not references.m2ts_exists:
-            warnings.append(f"PlayItem {index} missing STREAM/{raw.clip_id}.m2ts")
+            warnings.append(f"PlayItem {index} missing STREAM/{raw_item.clip_id}.m2ts")
         if not references.clpi_exists:
-            warnings.append(f"PlayItem {index} missing CLIPINF/{raw.clip_id}.clpi")
-        if raw.is_multi_angle:
+            warnings.append(f"PlayItem {index} missing CLIPINF/{raw_item.clip_id}.clpi")
+        if raw_item.is_multi_angle:
             warnings.append(
-                f"PlayItem {index} is multi-angle; explicitly selected angle {raw.selected_angle}"
+                f"PlayItem {index} is multi-angle; explicitly selected angle "
+                f"{raw_item.selected_angle}"
             )
         logical_end = MediaTick90k(logical_start + duration)
         play_items.append(
             PlayItemInfo(
                 index=index,
-                clip_id=raw.clip_id,
-                codec_id=raw.codec_id,
-                in_time_45k=raw.in_time_45k,
-                out_time_45k=raw.out_time_45k,
+                clip_id=raw_item.clip_id,
+                codec_id=raw_item.codec_id,
+                in_time_45k=raw_item.in_time_45k,
+                out_time_45k=raw_item.out_time_45k,
                 logical_start_90k=logical_start,
                 logical_end_90k=logical_end,
-                connection_condition=raw.connection_condition,
-                is_multi_angle=raw.is_multi_angle,
-                selected_angle=raw.selected_angle,
-                angle_count=max(raw.angle_count, 1),
+                connection_condition=raw_item.connection_condition,
+                is_multi_angle=raw_item.is_multi_angle,
+                selected_angle=raw_item.selected_angle,
+                angle_count=max(raw_item.angle_count, 1),
                 references=references,
-                primary_pg_streams=raw.primary_pg_streams,
+                primary_pg_streams=raw_item.primary_pg_streams,
             )
         )
         logical_start = logical_end
@@ -96,21 +97,23 @@ def build_playlist(
     marks: list[PlaylistMarkInfo] = []
     previous_valid_time: MediaTick90k | None = None
     seen_times: set[MediaTick90k] = set()
-    for index, raw in enumerate(raw_marks):
+    for index, raw_mark in enumerate(raw_marks):
         absolute: MediaTick90k | None = None
-        if not 0 <= raw.play_item_index < len(play_items):
+        if not 0 <= raw_mark.play_item_index < len(play_items):
             errors.append(
-                f"Playlist mark {index} references missing PlayItem {raw.play_item_index}"
+                f"Playlist mark {index} references missing PlayItem "
+                f"{raw_mark.play_item_index}"
             )
         else:
-            item = play_items[raw.play_item_index]
-            if raw.timestamp_45k < item.in_time_45k:
+            item = play_items[raw_mark.play_item_index]
+            if raw_mark.timestamp_45k < item.in_time_45k:
                 errors.append(f"Playlist mark {index} is before PlayItem IN time")
-            elif raw.timestamp_45k > item.out_time_45k:
+            elif raw_mark.timestamp_45k > item.out_time_45k:
                 errors.append(f"Playlist mark {index} is after PlayItem OUT time")
             else:
                 absolute = MediaTick90k(
-                    item.logical_start_90k + from_45k(raw.timestamp_45k - item.in_time_45k)
+                    item.logical_start_90k
+                    + from_45k(raw_mark.timestamp_45k - item.in_time_45k)
                 )
                 if absolute in seen_times:
                     warnings.append(f"Playlist mark {index} duplicates an earlier chapter time")
@@ -121,12 +124,12 @@ def build_playlist(
         marks.append(
             PlaylistMarkInfo(
                 index=index,
-                mark_type=raw.mark_type,
-                play_item_index=raw.play_item_index,
-                timestamp_45k=raw.timestamp_45k,
+                mark_type=raw_mark.mark_type,
+                play_item_index=raw_mark.play_item_index,
+                timestamp_45k=raw_mark.timestamp_45k,
                 time_90k=absolute,
-                entry_es_pid=raw.entry_es_pid,
-                duration_45k=raw.duration_45k,
+                entry_es_pid=raw_mark.entry_es_pid,
+                duration_45k=raw_mark.duration_45k,
             )
         )
 

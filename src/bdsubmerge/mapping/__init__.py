@@ -1,5 +1,7 @@
 """Deterministic, UI-independent episode mapping."""
 
+from bdsubmerge.domain.timebase import MediaTick90k
+
 from .boundaries import boundary, merge_boundaries
 from .models import (
     BoundaryKind,
@@ -10,7 +12,6 @@ from .models import (
     MappingCostConfig,
     MappingLock,
     MappingResult,
-    MediaTick90k,
     TimelineBoundary,
 )
 from .solver import MappingError, auto_map_episodes

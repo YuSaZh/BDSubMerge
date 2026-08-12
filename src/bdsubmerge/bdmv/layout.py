@@ -45,8 +45,8 @@ def _direct_layout(selected_path: Path) -> BdmvLayout | None:
     if selected_path.is_file():
         if selected_path.suffix.casefold() == ".mpls":
             playlist_dir = selected_path.parent
-            bdmv_dir = playlist_dir.parent
-            index_path = _case_insensitive_child(bdmv_dir, "index.bdmv")
+            selected_bdmv_dir = playlist_dir.parent
+            index_path = _case_insensitive_child(selected_bdmv_dir, "index.bdmv")
             return _layout_from_index(selected_path, index_path) if index_path else None
         return _layout_from_index(selected_path, selected_path)
 
@@ -55,11 +55,11 @@ def _direct_layout(selected_path: Path) -> BdmvLayout | None:
         layout = _layout_from_index(selected_path, index_path)
         if layout:
             return layout
-    bdmv_dir = _case_insensitive_child(selected_path, "BDMV")
-    if bdmv_dir:
-        index_path = _case_insensitive_child(bdmv_dir, "index.bdmv")
-        if index_path:
-            return _layout_from_index(selected_path, index_path)
+    child_bdmv_dir = _case_insensitive_child(selected_path, "BDMV")
+    if child_bdmv_dir:
+        nested_index_path = _case_insensitive_child(child_bdmv_dir, "index.bdmv")
+        if nested_index_path:
+            return _layout_from_index(selected_path, nested_index_path)
     return None
 
 

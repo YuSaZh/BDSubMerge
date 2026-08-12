@@ -88,12 +88,12 @@ def write_outputs_atomically(
             committed.append(output)
             _sync_directory(output.path.parent)
         for output in outputs:
-            rollback_path = rollback.get(output.target_id)
+            saved_original = rollback.get(output.target_id)
             if (
-                rollback_path is not None
+                saved_original is not None
                 and output.collision_policy is CollisionPolicy.OVERWRITE
             ):
-                _safe_unlink(rollback_path)
+                _safe_unlink(saved_original)
         return WriteReceipt(
             tuple(output.path for output in outputs),
             tuple(backups),
@@ -107,12 +107,12 @@ def write_outputs_atomically(
         for path in staged.values():
             _safe_unlink(path)
         for output in outputs:
-            rollback_path = rollback.get(output.target_id)
+            pending_original = rollback.get(output.target_id)
             if (
-                rollback_path is not None
+                pending_original is not None
                 and output.collision_policy is CollisionPolicy.OVERWRITE
             ):
-                _safe_unlink(rollback_path)
+                _safe_unlink(pending_original)
 
 
 def _stage(output: ResolvedOutput, payload: Payload) -> Path:

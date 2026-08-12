@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -170,9 +171,9 @@ def _raw_mark(value: object) -> RawPlaylistMark:
 
 
 def _default_factory(path: str) -> object:
-    from shinya.bd.file import MoviePlaylistFile
-
-    return MoviePlaylistFile(path)
+    module = import_module("shinya.bd.file")
+    movie_playlist_file = cast(ParserFactory, module.__dict__["MoviePlaylistFile"])
+    return movie_playlist_file(path)
 
 
 class ShinyaPlaylistAdapter:

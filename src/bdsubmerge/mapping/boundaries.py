@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .models import BoundarySource, MediaTick90k, TimelineBoundary
+from bdsubmerge.domain.timebase import MediaTick90k
+
+from .models import BoundarySource, TimelineBoundary
 
 ZERO_TOLERANCE_90K = MediaTick90k(0)
 
