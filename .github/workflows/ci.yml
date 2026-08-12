@@ -28,15 +28,49 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes libegl1
       - name: Install project
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev,gui,packaging]"
+        run: >-
+          python -m pip install --upgrade pip &&
+          python -m pip install -c constraints/ci.txt -e ".[dev,gui,packaging]"
       - name: Ruff
         run: ruff check .
       - name: Mypy
         run: mypy
+      - name: Create temporary UNC share
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $shareName = "BDSubMerge$env:GITHUB_RUN_ID$env:GITHUB_RUN_ATTEMPT"
+          $shareRoot = Join-Path $env:RUNNER_TEMP $shareName
+          $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+          New-Item -ItemType Directory -Force -Path $shareRoot | Out-Null
+          New-SmbShare -Name $shareName -Path $shareRoot -FullAccess $identity | Out-Null
+          "BDSUBMERGE_TEST_UNC_ROOT=\\localhost\$shareName" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "BDSUBMERGE_TEST_SHARE=$shareName" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Pytest
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest
+        run: pytest --junitxml=reports/junit.xml --cov-report=xml:reports/coverage.xml
+      - name: Remove temporary UNC share
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ($env:BDSUBMERGE_TEST_SHARE) {
+            Remove-SmbShare -Name $env:BDSUBMERGE_TEST_SHARE -Force -ErrorAction SilentlyContinue
+          }
+      - name: Capture offscreen UI workspace
+        if: runner.os == 'Ubuntu'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tests/ui/capture_workspace.py reports/ui-main-window.png
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: reports
+          if-no-files-found: warn
 
   source-distribution:
     name: Source distribution
@@ -48,6 +82,24 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install build
       - run: python -m build
+      - name: Verify wheel contains translation resources
+        shell: python
+        run: |
+          import glob
+          import zipfile
+
+          wheel = glob.glob("dist/*.whl")
+          if len(wheel) != 1:
+              raise SystemExit(f"expected one wheel, found {wheel}")
+          with zipfile.ZipFile(wheel[0]) as archive:
+              names = set(archive.namelist())
+          required = {
+              "bdsubmerge/resources/i18n/en_US.json",
+              "bdsubmerge/resources/i18n/zh_CN.json",
+          }
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit(f"wheel is missing resources: {missing}")
       - uses: actions/upload-artifact@v7
         with:
           name: source-distribution

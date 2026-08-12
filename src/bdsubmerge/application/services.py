@@ -19,6 +19,7 @@ from bdsubmerge.mapping import (
     BoundarySource,
     EpisodeRequest,
     MappingError,
+    MappingLock,
     MappingResult,
     TimelineBoundary,
     auto_map_episodes,
@@ -245,9 +246,24 @@ class MergeApplicationService:
             return PreparedMerge(None, None, None, None, tuple(issues))
 
         try:
-            boundaries = build_playlist_boundaries(
+            tolerance_90k = MediaTick90k(request.boundary_tolerance_90k)
+            automatic_boundaries = build_playlist_boundaries(
                 request.playlist,
-                tolerance_90k=MediaTick90k(request.boundary_tolerance_90k),
+                tolerance_90k=tolerance_90k,
+            )
+            _validate_additional_boundaries(
+                request.additional_boundaries,
+                request.playlist,
+            )
+            boundaries = merge_boundaries(
+                (*automatic_boundaries, *request.additional_boundaries),
+                tolerance_90k=tolerance_90k,
+            )
+            locks = _canonicalize_boundary_locks(
+                request.locks,
+                (*automatic_boundaries, *request.additional_boundaries),
+                boundaries,
+                tolerance_90k,
             )
             episode_requests = tuple(
                 EpisodeRequest(
@@ -266,7 +282,7 @@ class MergeApplicationService:
             mapping = auto_map_episodes(
                 episode_requests,
                 boundaries,
-                locks=request.locks,
+                locks=locks,
                 config=request.mapping_config,
             )
         except (MappingError, ValueError) as error:
@@ -354,6 +370,55 @@ class MergeApplicationService:
 
 
 ZERO_BOUNDARY_TOLERANCE = MediaTick90k(0)
+
+
+def _validate_additional_boundaries(
+    boundaries: tuple[TimelineBoundary, ...],
+    playlist: PlaylistInfo,
+) -> None:
+    duration_90k = int(playlist.duration_90k)
+    for item in boundaries:
+        if item.kinds != frozenset({BoundaryKind.USER}):
+            raise ValueError(
+                f"additional boundary {item.id!r} must have only a user source"
+            )
+        if not 0 <= int(item.time_90k) <= duration_90k:
+            raise ValueError(
+                f"additional boundary {item.id!r} is outside the playlist timeline"
+            )
+
+
+def _canonicalize_boundary_locks(
+    locks: tuple[MappingLock, ...],
+    original: tuple[TimelineBoundary, ...],
+    normalized: tuple[TimelineBoundary, ...],
+    tolerance_90k: MediaTick90k,
+) -> tuple[MappingLock, ...]:
+    """Translate lock IDs when boundary normalization merges coincident candidates."""
+
+    original_by_id = {item.id: item for item in original}
+    normalized_ids = {item.id for item in normalized}
+    aliases: dict[str, str] = {}
+    tolerance = int(tolerance_90k)
+    for boundary_id, item in original_by_id.items():
+        if boundary_id in normalized_ids:
+            aliases[boundary_id] = boundary_id
+            continue
+        item_sources = set(item.sources)
+        for candidate in normalized:
+            delta = int(item.time_90k) - int(candidate.time_90k)
+            if 0 <= delta <= tolerance and item_sources.issubset(candidate.sources):
+                aliases[boundary_id] = candidate.id
+                break
+
+    return tuple(
+        replace(
+            lock,
+            start_boundary_id=aliases.get(lock.start_boundary_id, lock.start_boundary_id),
+            end_boundary_id=aliases.get(lock.end_boundary_id, lock.end_boundary_id),
+        )
+        for lock in locks
+    )
 
 
 def build_playlist_boundaries(

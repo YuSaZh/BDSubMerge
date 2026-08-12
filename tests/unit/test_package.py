@@ -13,6 +13,9 @@ def test_empty_cli_succeeds() -> None:
     assert main([]) == 0
 
 
-def test_unimplemented_ui_exits_with_clear_message() -> None:
-    with pytest.raises(SystemExit, match="desktop UI is not implemented"):
-        app_main()
+def test_gui_smoke_mode_starts_without_entering_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    assert app_main(["bdsubmerge-gui", "--smoke-test"]) == 0

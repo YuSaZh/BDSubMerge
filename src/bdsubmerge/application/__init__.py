@@ -16,6 +16,13 @@ from .models import (
     SubtitleAsset,
     SubtitleInput,
 )
+from .playlist_selection import (
+    JRIVER_INCOMPATIBLE_WARNING,
+    PlaylistEquivalenceGroup,
+    PlaylistSelectionRequest,
+    PlaylistSelectionResult,
+    select_playlists,
+)
 from .services import (
     BdmvApplicationService,
     MergeApplicationService,
@@ -31,9 +38,13 @@ __all__ = [
     "ExecuteMergeResult",
     "InspectRequest",
     "InspectResult",
+    "JRIVER_INCOMPATIBLE_WARNING",
     "LoadSubtitlesRequest",
     "LoadSubtitlesResult",
     "MergeApplicationService",
+    "PlaylistEquivalenceGroup",
+    "PlaylistSelectionRequest",
+    "PlaylistSelectionResult",
     "PrepareMergeRequest",
     "PreparedMerge",
     "ScanRequest",
@@ -42,4 +53,5 @@ __all__ = [
     "SubtitleAsset",
     "SubtitleInput",
     "build_playlist_boundaries",
+    "select_playlists",
 ]

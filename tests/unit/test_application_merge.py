@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 from bdsubmerge.application import (
@@ -17,7 +18,12 @@ from bdsubmerge.domain.models import (
     ReferenceStatus,
 )
 from bdsubmerge.domain.timebase import MediaTick90k
-from bdsubmerge.mapping import BoundaryKind
+from bdsubmerge.mapping import (
+    BoundaryKind,
+    BoundarySource,
+    MappingLock,
+    boundary,
+)
 from bdsubmerge.output import FullPathOutputTarget
 
 ASS = (
@@ -221,3 +227,180 @@ def test_missing_source_blocks_merge_before_output(tmp_path: Path) -> None:
 
     assert prepared.ready is False
     assert "missing_subtitle_source" in {issue.code for issue in prepared.issues}
+
+
+def test_additional_user_boundary_changes_automatic_mapping(tmp_path: Path) -> None:
+    layout = _layout(tmp_path)
+    playlist = replace(
+        _playlist(layout),
+        duration_90k=MediaTick90k(120 * 90_000),
+        play_items=(),
+        marks=(),
+    )
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    subtitles = SubtitleApplicationService(read_bytes=lambda path: ASS).load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    user_boundary = boundary(
+        "user:1",
+        60 * 90_000,
+        BoundarySource(BoundaryKind.USER, "ui"),
+        user_created=True,
+    )
+    service = MergeApplicationService()
+
+    automatic = service.prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("automatic", path=tmp_path / "automatic.ass"),),
+            accept_low_confidence=True,
+        )
+    )
+    with_user_boundary = service.prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("user", path=tmp_path / "user.ass"),),
+            additional_boundaries=(user_boundary,),
+            accept_low_confidence=True,
+        )
+    )
+
+    assert automatic.mapping is not None
+    assert with_user_boundary.mapping is not None
+    assert (
+        int(automatic.mapping.mappings[0].interval_duration_90k) == 120 * 90_000
+    )
+    assert (
+        int(with_user_boundary.mapping.mappings[0].interval_duration_90k) == 60 * 90_000
+    )
+    assert with_user_boundary.mapping.mappings[0].end_boundary.id == "user:1"
+
+
+def test_restored_lock_can_reference_additional_user_boundary(tmp_path: Path) -> None:
+    layout = _layout(tmp_path)
+    playlist = replace(
+        _playlist(layout),
+        duration_90k=MediaTick90k(120 * 90_000),
+        play_items=(),
+        marks=(),
+    )
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    subtitles = SubtitleApplicationService(read_bytes=lambda path: ASS).load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    user_boundary = boundary(
+        "user:restored",
+        60 * 90_000,
+        BoundarySource(BoundaryKind.USER, "ui"),
+        user_created=True,
+    )
+
+    prepared = MergeApplicationService().prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("output", path=tmp_path / "output.ass"),),
+            locks=(
+                MappingLock(
+                    "episode-1",
+                    "playlist:start",
+                    "user:restored",
+                    MediaTick90k(900),
+                ),
+            ),
+            additional_boundaries=(user_boundary,),
+            accept_low_confidence=True,
+        )
+    )
+
+    assert prepared.mapping is not None
+    mapping = prepared.mapping.mappings[0]
+    assert mapping.locked is True
+    assert mapping.start_boundary.id == "playlist:start"
+    assert mapping.end_boundary.id == "user:restored"
+    assert mapping.manual_offset_90k == 900
+
+
+def test_restored_user_lock_survives_coincident_boundary_normalization(
+    tmp_path: Path,
+) -> None:
+    layout = _layout(tmp_path)
+    playlist = replace(
+        _playlist(layout),
+        duration_90k=MediaTick90k(120 * 90_000),
+        play_items=(),
+        marks=(),
+    )
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    subtitles = SubtitleApplicationService(read_bytes=lambda path: ASS).load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    user_start = boundary(
+        "user:start",
+        0,
+        BoundarySource(BoundaryKind.USER, "ui"),
+        user_created=True,
+    )
+
+    prepared = MergeApplicationService().prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("output", path=tmp_path / "output.ass"),),
+            locks=(MappingLock("episode-1", "user:start", "playlist:end"),),
+            additional_boundaries=(user_start,),
+            accept_low_confidence=True,
+        )
+    )
+
+    assert prepared.mapping is not None
+    mapping = prepared.mapping.mappings[0]
+    assert mapping.locked is True
+    assert mapping.start_boundary.time_90k == 0
+    assert BoundaryKind.USER in mapping.start_boundary.kinds
+
+
+def test_invalid_additional_boundary_returns_mapping_failed(tmp_path: Path) -> None:
+    layout = _layout(tmp_path)
+    playlist = _playlist(layout)
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    subtitles = SubtitleApplicationService(read_bytes=lambda path: ASS).load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    invalid_boundaries = (
+        boundary(
+            "chapter:extra",
+            30 * 90_000,
+            BoundarySource(BoundaryKind.CHAPTER, "ui"),
+        ),
+        boundary(
+            "user:outside",
+            61 * 90_000,
+            BoundarySource(BoundaryKind.USER, "ui"),
+            user_created=True,
+        ),
+    )
+
+    for invalid_boundary in invalid_boundaries:
+        prepared = MergeApplicationService().prepare(
+            PrepareMergeRequest(
+                layout,
+                playlist,
+                subtitles,
+                (FullPathOutputTarget("output", path=tmp_path / "output.ass"),),
+                additional_boundaries=(invalid_boundary,),
+            )
+        )
+
+        assert prepared.mapping is None
+        assert {issue.code for issue in prepared.issues} == {"mapping_failed"}

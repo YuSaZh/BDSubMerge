@@ -9,6 +9,7 @@ from bdsubmerge.project.paths import (
     find_relocation_candidates,
     fingerprint,
     relocate_source,
+    resolve_output_path,
     resolve_path,
     snapshot_file,
     store_path,
@@ -48,6 +49,15 @@ def test_absolute_hint_is_used_after_project_moves(tmp_path: Path) -> None:
     resolved = resolve_path(stored, project_file=tmp_path / "moved" / "project.bdsm.json")
 
     assert resolved == existing.absolute()
+
+
+def test_nonexistent_output_still_resolves_relative_to_moved_project(tmp_path: Path) -> None:
+    project_file = tmp_path / "moved" / "show.bdsm.json"
+    stored = StoredPath("../media/BDMV/index.ass", "D:/old/BDMV/index.ass")
+
+    resolved = resolve_output_path(stored, project_file=project_file)
+
+    assert resolved == project_file.absolute().parent / "../media/BDMV/index.ass"
 
 
 def test_metadata_fingerprint_detects_change_and_missing_sources(tmp_path: Path) -> None:

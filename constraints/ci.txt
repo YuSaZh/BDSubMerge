@@ -1,0 +1,29 @@
+# Exact versions observed in the green GitHub Actions Python 3.12 environment.
+# Workflows apply this file as a constraint; pyproject.toml remains the package contract.
+PySide6==6.11.1
+PySide6-Addons==6.11.1
+PySide6-Essentials==6.11.1
+altgraph==0.17.5
+coverage==7.15.4
+iniconfig==2.3.0
+librt==0.15.0
+lxml==6.1.1
+mypy==1.20.2
+mypy_extensions==1.1.0
+packaging==26.3
+pathspec==1.1.1
+pefile==2024.8.26; sys_platform == "win32"
+pluggy==1.6.0
+Pygments==2.20.0
+PyInstaller==6.22.0
+pyinstaller-hooks-contrib==2026.6
+pysubs2==1.8.1
+pytest==8.4.2
+pytest-cov==6.3.0
+pytest-qt==4.5.0
+pywin32-ctypes==0.2.3; sys_platform == "win32"
+ruff==0.16.2
+setuptools==84.0.0
+shiboken6==6.11.1
+shinya==0.2a1
+typing_extensions==4.16.0

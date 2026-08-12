@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
 from bdsubmerge.domain.models import BdmvLayout, PlaylistInfo
-from bdsubmerge.mapping import MappingCostConfig, MappingLock, MappingResult
+from bdsubmerge.mapping import (
+    MappingCostConfig,
+    MappingLock,
+    MappingResult,
+    TimelineBoundary,
+)
 from bdsubmerge.merge import MergeOptions, MergeReport
 from bdsubmerge.output import (
     OutputContext,
@@ -114,6 +119,7 @@ class PrepareMergeRequest:
     boundary_tolerance_90k: int = 0
     accept_low_confidence: bool = False
     require_existing_sources: bool = True
+    additional_boundaries: tuple[TimelineBoundary, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)

@@ -43,6 +43,14 @@ def resolve_path(stored: StoredPath, *, project_file: Path) -> Path:
     return Path(stored.absolute)
 
 
+def resolve_output_path(stored: StoredPath, *, project_file: Path) -> Path:
+    """Resolve a destination relative to the project even before it exists."""
+
+    if stored.relative is not None:
+        return project_file.absolute().parent / Path(stored.relative)
+    return Path(stored.absolute)
+
+
 def fingerprint(path: Path) -> FileFingerprint:
     stat = path.stat()
     return FileFingerprint(stat.st_size, stat.st_mtime_ns)

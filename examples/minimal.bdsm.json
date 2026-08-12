@@ -1,0 +1,140 @@
+{
+  "bdmv": {
+    "fingerprint": {
+      "mtime_ns": 0,
+      "size": 0
+    },
+    "path": {
+      "absolute": "/relocate/disc/BDMV",
+      "relative": "../relocate/disc/BDMV"
+    }
+  },
+  "boundaries": [
+    {
+      "confidence": 100,
+      "enabled": true,
+      "id": "playlist-start",
+      "kinds": [
+        "playlist_start"
+      ],
+      "note": "",
+      "source_references": [
+        "playlist"
+      ],
+      "time_90k": 0,
+      "user_created": false
+    },
+    {
+      "confidence": 100,
+      "enabled": true,
+      "id": "episode-end",
+      "kinds": [
+        "user"
+      ],
+      "note": "Example boundary; relocate sources before use",
+      "source_references": [
+        "example"
+      ],
+      "time_90k": 129600000,
+      "user_created": true
+    }
+  ],
+  "conflict_policy": {
+    "accept_script_info_conflicts": false,
+    "clip_negative_starts": true,
+    "keep_events_ending_before_zero": false,
+    "preserve_unknown_sections": true
+  },
+  "index_bdmv": {
+    "fingerprint": {
+      "mtime_ns": 0,
+      "size": 0
+    },
+    "path": {
+      "absolute": "/relocate/disc/BDMV/index.bdmv",
+      "relative": "../relocate/disc/BDMV/index.bdmv"
+    }
+  },
+  "mappings": [
+    {
+      "confidence": "high",
+      "end_90k": 129600000,
+      "end_boundary_id": "episode-end",
+      "locked": true,
+      "manual_offset_90k": 0,
+      "start_90k": 0,
+      "start_boundary_id": "playlist-start",
+      "subtitle_id": "E01",
+      "warnings": []
+    }
+  ],
+  "outputs": [
+    {
+      "backup_policy": "none",
+      "collision_policy": "abort",
+      "encoding": "utf-8-sig",
+      "id": "jriver-main",
+      "path_template": "",
+      "preset": "jriver",
+      "resolved_path": {
+        "absolute": "/relocate/disc/BDMV/index.ass",
+        "relative": "../relocate/disc/BDMV/index.ass"
+      }
+    }
+  ],
+  "playlist": {
+    "duration_90k": 129600000,
+    "source": {
+      "fingerprint": {
+        "mtime_ns": 0,
+        "size": 0
+      },
+      "path": {
+        "absolute": "/relocate/disc/BDMV/PLAYLIST/00001.mpls",
+        "relative": "../relocate/disc/BDMV/PLAYLIST/00001.mpls"
+      }
+    },
+    "stem": "00001",
+    "timeline_fingerprint": [
+      [
+        "00001",
+        0,
+        64800000,
+        0
+      ]
+    ]
+  },
+  "schema_version": 1,
+  "subtitles": [
+    {
+      "effective_end_90k": 128700000,
+      "encoding": "utf-8-sig",
+      "event_count": 0,
+      "format": "ass",
+      "id": "E01",
+      "metadata": [
+        [
+          "example",
+          "relocate-required"
+        ]
+      ],
+      "order": 0,
+      "raw_end_90k": 128700000,
+      "source": {
+        "fingerprint": {
+          "mtime_ns": 0,
+          "size": 0
+        },
+        "path": {
+          "absolute": "/relocate/subtitles/E01.ass",
+          "relative": "../relocate/subtitles/E01.ass"
+        }
+      },
+      "style_count": 0,
+      "warnings": [
+        "Structural example only; source must be relocated and fingerprint refreshed"
+      ]
+    }
+  ],
+  "ui_notes": "Anonymous schema example only. Relocate every source before validation or merge. All fingerprints are placeholders."
+}

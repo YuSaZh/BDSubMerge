@@ -23,5 +23,21 @@ Shinya / pysubs2 / filesystem adapters
 7. `project` persists versioned plans and migrates older schemas.
 8. `ui` and `cli` call the same application services and never consume raw adapter objects.
 
+## Application and persistence boundaries
+
+CLI and GUI construct the same typed application requests. Application services coordinate
+BDMV adapters, subtitle loading, mapping, merge computation, output preflight, and transactional
+writing; surfaces must not duplicate those rules.
+
+The `project` layer owns a versioned immutable snapshot and neutral state DTOs. It does not
+import UI or concrete output targets. A snapshot stores cheap source metadata fingerprints,
+integer mapping times, output/conflict policies, and relative paths with absolute recovery hints.
+Loading reports changed or missing sources before an application request can execute. Project
+JSON is committed by a same-directory atomic writer.
+
+The `output` layer resolves all targets before writing. Multi-target writes stage and validate
+every payload before commit, and roll back the set on failure. Merge engines return data only;
+they never choose a destination or write a file.
+
 The directory structure and acceptance criteria are defined by the repository development
 specification. New third-party behavior must first be captured by a contract test.

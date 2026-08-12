@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .paths import check_project_sources, resolve_path, snapshot_file, store_path
+from .paths import (
+    check_project_sources,
+    resolve_output_path,
+    resolve_path,
+    snapshot_file,
+    store_path,
+)
 from .schema import (
     BoundarySnapshot,
     ConflictPolicySnapshot,
@@ -157,7 +163,7 @@ def restore_project_state(
             item.preset,
             item.path_template,
             (
-                resolve_path(item.resolved_path, project_file=project_file)
+                resolve_output_path(item.resolved_path, project_file=project_file)
                 if item.resolved_path is not None
                 else None
             ),

@@ -171,7 +171,7 @@ def _raw_mark(value: object) -> RawPlaylistMark:
 
 
 def _default_factory(path: str) -> object:
-    module = import_module("shinya.bd.file")
+    module = import_module("shinya.bd")
     movie_playlist_file = cast(ParserFactory, module.__dict__["MoviePlaylistFile"])
     return movie_playlist_file(path)
 

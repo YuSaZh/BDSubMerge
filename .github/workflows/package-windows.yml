@@ -18,12 +18,108 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install project
-        run: python -m pip install --upgrade pip && python -m pip install ".[gui,packaging]"
+        run: >-
+          python -m pip install --upgrade pip &&
+          python -m pip install -c constraints/ci.txt ".[gui,packaging]"
       - name: Build onedir package
-        run: pyinstaller --noconfirm --clean --onedir --windowed --name BDSubMerge src/bdsubmerge/app.py
+        run: >-
+          pyinstaller --noconfirm --clean --onedir --windowed
+          --name BDSubMerge
+          --collect-data bdsubmerge
+          --collect-all shinya
+          --collect-all pysubs2
+          src/bdsubmerge/app.py
+      - name: Verify packaged translation resources
+        shell: pwsh
+        run: |
+          $required = @(
+            'dist/BDSubMerge/_internal/bdsubmerge/resources/i18n/en_US.json',
+            'dist/BDSubMerge/_internal/bdsubmerge/resources/i18n/zh_CN.json'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Packaged resource is missing: $path"
+            }
+          }
+      - name: Smoke-test packaged GUI
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $smokeRoot = Join-Path $env:RUNNER_TEMP '无 Python 环境'
+          New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+          Copy-Item -Recurse dist/BDSubMerge (Join-Path $smokeRoot 'BDSubMerge')
+          $env:PYTHONHOME = $null
+          $env:PYTHONPATH = $null
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          & (Join-Path $smokeRoot 'BDSubMerge/BDSubMerge.exe') --smoke-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged GUI smoke test failed with exit code $LASTEXITCODE"
+          }
       - name: Include notices
         shell: pwsh
-        run: Copy-Item LICENSE,THIRD_PARTY_NOTICES.md -Destination dist/BDSubMerge
+        run: |
+          Copy-Item LICENSE,THIRD_PARTY_NOTICES.md -Destination dist/BDSubMerge
+          New-Item -ItemType Directory -Force -Path dist/BDSubMerge/LICENSES | Out-Null
+          Copy-Item licenses/* -Destination dist/BDSubMerge/LICENSES
+      - name: Collect installed dependency licenses
+        shell: python
+        run: |
+          import importlib.metadata as metadata
+          import pathlib
+          import shutil
+          import sys
+
+          destination = pathlib.Path("dist/BDSubMerge/LICENSES")
+          distributions = (
+              "PySide6",
+              "PySide6_Essentials",
+              "PySide6_Addons",
+              "shiboken6",
+              "PyInstaller",
+          )
+          for name in distributions:
+              distribution = metadata.distribution(name)
+              candidates = [
+                  file for file in distribution.files or ()
+                  if file.name.lower().startswith(("license", "copying"))
+                  or any(part.lower().startswith("license") for part in file.parts)
+              ]
+              if not candidates:
+                  raise SystemExit(f"no license file found in {name}")
+              target = destination / name
+              target.mkdir(parents=True, exist_ok=True)
+              for candidate in candidates:
+                  source = pathlib.Path(distribution.locate_file(candidate))
+                  shutil.copy2(source, target / candidate.name)
+          python_license = pathlib.Path(sys.base_prefix) / "LICENSE.txt"
+          if not python_license.is_file():
+              raise SystemExit(f"Python license is missing: {python_license}")
+          shutil.copy2(python_license, destination / "PYTHON.txt")
+      - name: Verify release licenses and bundled adapters
+        shell: pwsh
+        run: |
+          $required = @(
+            'dist/BDSubMerge/LICENSE',
+            'dist/BDSubMerge/THIRD_PARTY_NOTICES.md',
+            'dist/BDSubMerge/LICENSES/SHINYA.txt',
+            'dist/BDSubMerge/LICENSES/PYSUBS2.txt',
+            'dist/BDSubMerge/LICENSES/BLURAY_SUBTITLE.txt',
+            'dist/BDSubMerge/LICENSES/QT_SOURCE_OFFER.txt',
+            'dist/BDSubMerge/LICENSES/PYTHON.txt'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Release license is missing: $path"
+            }
+          }
+          if (-not (Get-ChildItem dist/BDSubMerge/LICENSES/PySide6* -Recurse -File)) {
+            throw 'PySide6/Qt license files are missing'
+          }
+          if (-not (Get-ChildItem dist/BDSubMerge/LICENSES/PySide6* `
+              -Recurse -File -Filter '*LGPL*')) {
+            throw 'Qt LGPL license text is missing'
+          }
       - uses: actions/upload-artifact@v7
         with:
           name: BDSubMerge-windows-x64

@@ -19,15 +19,12 @@ classifiers = [
   "Topic :: Multimedia :: Video",
 ]
 dependencies = [
-  "charset-normalizer>=3.4,<4",
-  "platformdirs>=4.3,<5",
-  "pydantic>=2.10,<3",
-  "pysubs2>=1.8,<2",
-  "shinya>=0.0.5,<1",
+  "pysubs2==1.8.1",
+  "shinya==0.2a1",
 ]
 
 [project.optional-dependencies]
-gui = ["PySide6>=6.8,<7"]
+gui = ["PySide6==6.11.1"]
 dev = [
   "mypy>=1.14,<2",
   "pytest>=8.3,<9",
@@ -35,7 +32,7 @@ dev = [
   "pytest-qt>=4.4,<5",
   "ruff>=0.9,<1",
 ]
-packaging = ["PyInstaller>=6.11,<7"]
+packaging = ["PyInstaller==6.22.0"]
 
 [project.scripts]
 bdsubmerge = "bdsubmerge.cli:main"
