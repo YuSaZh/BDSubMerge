@@ -66,8 +66,6 @@ def test_validation_failure_leaves_no_outputs_or_temporary_files(tmp_path: Path)
 def test_failed_multi_target_commit_restores_overwritten_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import bdsubmerge.output.atomic_writer as writer
-
     first = tmp_path / "first.ass"
     first.write_bytes(b"old")
     targets = (
@@ -75,18 +73,18 @@ def test_failed_multi_target_commit_restores_overwritten_file(
         FullPathOutputTarget("second", path=tmp_path / "second.ass"),
     )
     preflight = preflight_outputs(targets, OutputContext(subtitle_format="ass"))
-    real_replace = writer.os.replace
+    real_replace = Path.replace
     commits = 0
 
-    def fail_second_commit(source: Path, destination: Path) -> None:
+    def fail_second_commit(source: Path, destination: Path) -> Path:
         nonlocal commits
         if str(source).endswith(".tmp"):
             commits += 1
             if commits == 2:
                 raise OSError("simulated commit failure")
-        real_replace(source, destination)
+        return real_replace(source, destination)
 
-    monkeypatch.setattr(writer.os, "replace", fail_second_commit)
+    monkeypatch.setattr(Path, "replace", fail_second_commit)
 
     with pytest.raises(AtomicWriteError, match="simulated commit failure"):
         write_outputs_atomically(preflight, {"first": b"new", "second": b"new"})

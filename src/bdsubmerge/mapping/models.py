@@ -77,7 +77,7 @@ class MappingLock:
     episode_id: str
     start_boundary_id: str
     end_boundary_id: str
-    manual_offset_90k: MediaTick90k = MediaTick90k(0)
+    manual_offset_90k: MediaTick90k = field(default_factory=lambda: MediaTick90k(0))
 
 
 @dataclass(frozen=True, slots=True)

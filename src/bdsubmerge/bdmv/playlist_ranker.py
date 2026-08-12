@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from bdsubmerge.domain.models import PlaylistConfidence, PlaylistInfo
-from bdsubmerge.domain.timebase import MediaTick90k, TICKS_PER_SECOND
+from bdsubmerge.domain.timebase import TICKS_PER_SECOND, MediaTick90k
 
 SHORT_ITEM_THRESHOLD = 15 * TICKS_PER_SECOND
 FEATURE_LENGTH_THRESHOLD = 20 * 60 * TICKS_PER_SECOND

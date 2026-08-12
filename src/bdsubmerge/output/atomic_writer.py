@@ -71,7 +71,7 @@ def write_outputs_atomically(
                     raise AtomicWriteError(
                         f"backup path is no longer available: {output.backup_path}"
                     )
-                os.replace(output.path, output.backup_path)
+                output.path.replace(output.backup_path)
                 rollback[output.target_id] = output.backup_path
                 backups.append(output.backup_path)
             elif output.collision_policy is CollisionPolicy.OVERWRITE:
@@ -80,11 +80,11 @@ def write_outputs_atomically(
                     output.path.name,
                     ".rollback",
                 )
-                os.replace(output.path, rollback_path)
+                output.path.replace(rollback_path)
                 rollback[output.target_id] = rollback_path
 
         for output in outputs:
-            os.replace(staged[output.target_id], output.path)
+            staged[output.target_id].replace(output.path)
             committed.append(output)
             _sync_directory(output.path.parent)
         for output in outputs:
@@ -151,7 +151,7 @@ def _rollback(
             output.path.unlink(missing_ok=True)
         original = rollback.get(output.target_id)
         if original is not None and original.exists():
-            os.replace(original, output.path)
+            original.replace(output.path)
 
 
 def _sync_directory(directory: Path) -> None:

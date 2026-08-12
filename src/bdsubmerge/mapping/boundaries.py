@@ -6,9 +6,13 @@ from collections.abc import Iterable
 
 from .models import BoundarySource, MediaTick90k, TimelineBoundary
 
+ZERO_TOLERANCE_90K = MediaTick90k(0)
+
 
 def merge_boundaries(
-    boundaries: Iterable[TimelineBoundary], *, tolerance_90k: MediaTick90k = MediaTick90k(0)
+    boundaries: Iterable[TimelineBoundary],
+    *,
+    tolerance_90k: MediaTick90k = ZERO_TOLERANCE_90K,
 ) -> tuple[TimelineBoundary, ...]:
     """Merge nearby boundaries while retaining every source reference.
 

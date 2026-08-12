@@ -101,7 +101,7 @@ class DiscNameOutputTarget(OutputTarget):
 
 @dataclass(frozen=True, slots=True)
 class TemplateOutputTarget(OutputTarget):
-    directory: Path = field(default_factory=lambda: Path("."))
+    directory: Path = field(default_factory=Path)
     template: str = "{disc_name}_{playlist_stem}_{language}.{format}"
 
     @property

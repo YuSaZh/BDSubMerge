@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from bdsubmerge.bdmv.timeline import RawPlaylistMark, RawPlayItem, build_playlist
+from bdsubmerge.bdmv.timeline import RawPlayItem, RawPlaylistMark, build_playlist
 
 
 def _references(tmp_path: Path, *clip_ids: str) -> tuple[Path, Path]:

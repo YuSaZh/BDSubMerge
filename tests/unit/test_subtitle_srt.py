@@ -1,7 +1,6 @@
 from bdsubmerge.subtitles.loader import SubtitleFormat, load_text_subtitle
 from bdsubmerge.subtitles.srt_document import format_srt_time, parse_srt
 
-
 SRT_TEXT = """\ufeff9\r
 00:00:01,001 --> 00:00:02,002 position:50%\r
 first line\r

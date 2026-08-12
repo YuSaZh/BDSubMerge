@@ -7,9 +7,9 @@ from pathlib import Path
 
 from bdsubmerge.domain.models import (
     PgStreamInfo,
+    PlayItemInfo,
     PlaylistInfo,
     PlaylistMarkInfo,
-    PlayItemInfo,
     ReferenceStatus,
 )
 from bdsubmerge.domain.timebase import MediaTick90k, from_45k

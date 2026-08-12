@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import NewType
 
 MediaTick90k = NewType("MediaTick90k", int)
@@ -12,7 +12,7 @@ TICKS_PER_MILLISECOND = 90
 TICKS_PER_CENTISECOND = 900
 
 
-class RoundingMode(str, Enum):
+class RoundingMode(StrEnum):
     """Explicit integer rounding policy for a target time unit."""
 
     FLOOR = "floor"

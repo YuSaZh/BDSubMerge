@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from bdsubmerge.bdmv.timeline import RawPlaylistMark, RawPlayItem, build_playlist
+from bdsubmerge.bdmv.timeline import RawPlayItem, RawPlaylistMark, build_playlist
 from bdsubmerge.domain.models import BdmvLayout, PgStreamInfo, PlaylistInfo
 from bdsubmerge.domain.timebase import MediaTick90k
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 
 from .confidence import classify_confidence, lowest_confidence
 from .models import (
@@ -58,7 +59,7 @@ def auto_map_episodes(
         raise MappingError("at least two enabled timeline boundaries are required")
     if any(
         int(left.time_90k) == int(right.time_90k)
-        for left, right in zip(boundary_items, boundary_items[1:], strict=False)
+        for left, right in pairwise(boundary_items)
     ):
         raise MappingError("enabled boundaries must have distinct times; merge them first")
 

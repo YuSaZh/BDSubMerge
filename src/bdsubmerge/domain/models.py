@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from bdsubmerge.domain.timebase import MediaTick90k
 
 
-class PlaylistConfidence(str, Enum):
+class PlaylistConfidence(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"

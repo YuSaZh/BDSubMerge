@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import hashlib
 import re
+from dataclasses import dataclass, replace
+from itertools import pairwise
 
 from bdsubmerge.subtitles.ass_document import (
     AssDocument,
     AssEntry,
     AssEvent,
     AssFormatLine,
-    AssKeyValue,
     AssRawLine,
     AssSection,
     AssStyle,
@@ -491,7 +491,7 @@ def merge_srt(plan: MergePlan[SrtDocument]) -> SrtMergeResult:
                     )
                 )
             cues.append(replace(cue, start_ticks=start, end_ticks=end))
-    for previous, current in zip(cues, cues[1:]):
+    for previous, current in pairwise(cues):
         if current.start_ticks < previous.end_ticks:
             notices.append(MergeNotice("warning", "cue_overlap", "SRT cues overlap"))
     base = plan.sources[0].document

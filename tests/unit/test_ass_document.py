@@ -6,7 +6,6 @@ from bdsubmerge.subtitles.ass_document import (
     parse_ass_time,
 )
 
-
 ASS_TEXT = """\ufeff[Script Info]\r
 PlayResY: 1080\r
 PlayResX: 1920\r

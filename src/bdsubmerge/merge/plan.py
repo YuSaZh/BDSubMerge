@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, TypeVar
-
-DocumentT = TypeVar("DocumentT")
 
 
 @dataclass(frozen=True, slots=True)
-class MergeSource(Generic[DocumentT]):
+class MergeSource[DocumentT]:
     label: str
     document: DocumentT
     offset_ticks: int
@@ -25,7 +22,7 @@ class MergeOptions:
 
 
 @dataclass(frozen=True, slots=True)
-class MergePlan(Generic[DocumentT]):
+class MergePlan[DocumentT]:
     sources: tuple[MergeSource[DocumentT], ...]
     options: MergeOptions = MergeOptions()
 
