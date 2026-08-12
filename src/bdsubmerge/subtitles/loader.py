@@ -14,6 +14,7 @@ class SubtitleFormat(Enum):
     ASS = "ass"
     SSA = "ssa"
     SRT = "srt"
+    SUP = "sup"
 
 
 class UnsupportedSubtitleFormatError(ValueError):
@@ -43,6 +44,8 @@ def load_text_subtitle(
     encoding: str | None = None,
 ) -> LoadedTextSubtitle:
     subtitle_format = format_from_name(name)
+    if subtitle_format is SubtitleFormat.SUP:
+        raise UnsupportedSubtitleFormatError("SUP is a binary PGS format")
     decoded: DecodedText = decode_subtitle(data, encoding=encoding)
     if subtitle_format in {SubtitleFormat.ASS, SubtitleFormat.SSA}:
         document: AssDocument | SrtDocument = parse_ass(decoded.text)

@@ -18,6 +18,7 @@ class TextSubtitleInfo:
     suspected_long_tail: bool
     play_res_x: int | None = None
     play_res_y: int | None = None
+    duration_estimated: bool = False
 
 
 def _effective_end(
