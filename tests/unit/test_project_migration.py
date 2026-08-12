@@ -1,8 +1,9 @@
 from copy import deepcopy
 
+from test_project_persistence import sample_project
+
 from bdsubmerge.project.migration import migrate_payload
 from bdsubmerge.project.persistence import project_to_data
-from test_project_persistence import sample_project
 
 
 def test_v0_migration_is_ordered_and_does_not_mutate_input() -> None:

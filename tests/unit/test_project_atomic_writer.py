@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import pytest
+from test_project_persistence import sample_project
 
 from bdsubmerge.project.atomic_writer import (
     AtomicProjectWriteError,
@@ -9,7 +10,6 @@ from bdsubmerge.project.atomic_writer import (
     atomic_save_project,
 )
 from bdsubmerge.project.persistence import load_project_bytes
-from test_project_persistence import sample_project
 
 
 def _temporary_files(directory: Path, destination_name: str) -> tuple[Path, ...]:

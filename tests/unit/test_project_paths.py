@@ -2,6 +2,8 @@ import os
 from dataclasses import replace
 from pathlib import Path
 
+from test_project_persistence import sample_project
+
 from bdsubmerge.project.paths import (
     check_project_sources,
     find_relocation_candidates,
@@ -12,7 +14,6 @@ from bdsubmerge.project.paths import (
     store_path,
 )
 from bdsubmerge.project.schema import SourceState, StoredPath
-from test_project_persistence import sample_project
 
 
 def test_path_in_project_tree_prefers_relative_location(tmp_path: Path) -> None:
