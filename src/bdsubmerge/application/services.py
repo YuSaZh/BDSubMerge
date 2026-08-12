@@ -423,8 +423,8 @@ def _merge_payload(
                 request.subtitles.assets, mapping.mappings, strict=True
             )
         )
-        result = merge_ass(MergePlan(sources, options))
-        return replace(result.document, bom=False).serialize(), result.report
+        ass_result = merge_ass(MergePlan(sources, options))
+        return replace(ass_result.document, bom=False).serialize(), ass_result.report
     if request.subtitles.format is SubtitleFormat.SRT:
         srt_sources = tuple(
             MergeSource(
@@ -436,8 +436,8 @@ def _merge_payload(
                 request.subtitles.assets, mapping.mappings, strict=True
             )
         )
-        result = merge_srt(MergePlan(srt_sources, options))
-        return result.document.serialize(bom=False), result.report
+        srt_result = merge_srt(MergePlan(srt_sources, options))
+        return srt_result.document.serialize(bom=False), srt_result.report
     if request.subtitles.format is SubtitleFormat.SUP:
         pgs_sources = tuple(
             PgsSource(

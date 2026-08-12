@@ -305,8 +305,8 @@ def _metadata_item(value: Any) -> tuple[str, str]:
         or not isinstance(value[1], str)
     ):
         raise ProjectSchemaError("subtitle metadata item must contain two strings")
-    key = cast(str, value[0])
-    metadata_value = cast(str, value[1])
+    key = value[0]
+    metadata_value = value[1]
     return key, metadata_value
 
 
