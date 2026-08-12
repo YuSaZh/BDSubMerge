@@ -54,7 +54,7 @@ def _integer(value: object, *names: str, default: int | None = None) -> int:
     return int(cast(Any, candidate))
 
 
-def _text(value: object, *names: str, default: str = "") -> str:
+def _text(value: object, *names: str, default: object = _MISSING) -> str:
     candidate = _member(value, *names, default=default)
     if isinstance(candidate, bytes):
         return candidate.decode("ascii")
