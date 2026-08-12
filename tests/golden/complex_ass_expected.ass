@@ -1,0 +1,15 @@
+﻿[Script Info]
+PlayResX: 1920
+PlayResY: 1080
+[V4+ Styles]
+Format: Name,Fontname,PrimaryColour
+Style: Default,Arial,white
+Style: Default__E02,Arial,yellow
+[Events]
+Format: Text,Style,End,Start,Layer
+Dialogue: {\rDefault}one,Default,0:00:01.00,0:00:00.00,0
+Dialogue: {\rDefault__E02}two,Default__E02,0:00:03.00,0:00:02.00,1
+[Private Data]
+opaque=a,b
+[Private Data]
+opaque=c,d
