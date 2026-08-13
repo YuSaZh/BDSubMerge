@@ -90,6 +90,7 @@
   "task.preparing": "正在预检",
   "task.writing": "正在生成字幕",
   "task.cancelled": "任务已取消",
+  "task.failed": "任务失败",
   "task.complete": "任务完成",
   "error.title": "错误详情",
   "settings.language": "语言",

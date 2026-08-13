@@ -90,6 +90,7 @@
   "task.preparing": "Running preflight",
   "task.writing": "Generating subtitles",
   "task.cancelled": "Task cancelled",
+  "task.failed": "Task failed",
   "task.complete": "Task complete",
   "error.title": "Error details",
   "settings.language": "Language",

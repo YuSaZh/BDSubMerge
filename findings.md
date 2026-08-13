@@ -21,6 +21,10 @@
 - run `31668089029` 的源码包和 Ubuntu/Windows Ruff 已通过；两平台 Mypy 同样因 3 处局部变量类型收窄失败，Pytest 尚未运行。
 - GUI 恢复 offset 过去经 `// 90` 保存为毫秒再 `* 90`，会丢失非整毫秒 tick；内存态必须直接保存原始 90 kHz tick，毫秒只作为控件显示/输入单位。
 - GUI 编辑期间还需保证：运行中预检进入 pending、解锁清除人工 offset、非法时间线拖动回滚、任务期目录 drop 不改变状态，并使保存态反映当前锁与 offset。
+- commit `bca41f6` 的 run `31669097224` 已在源码包、Ubuntu/Windows Ruff、Mypy、Pytest 和真实 Windows UNC 上全部通过，精确 tick 与 3 个 Mypy 根因已闭环。
+- 历史 CI 的 UI 截图步骤使用 `runner.os == 'Ubuntu'`，实际一直 skipped；当前批次改为 `Linux`，下一次 run 必须下载 PNG 并人工审查后才能声称截图验收完成。
+- 当前异步一致性批次采用应用状态驱动的整行重排，不依赖 Qt 对含 `QComboBox` 的 `InternalMove` 行搬移；项目恢复任务失败/取消会清理 pending 状态，任务失败不会再显示完成。
+- UI 截图必须作为独立 artifact 使用精确 PNG 路径和 `if-no-files-found: error`；上传整个已有 JUnit/coverage 的 `reports/` 目录不能证明截图存在。Ubuntu 截图还需显式安装 CJK 字体，避免中文界面依赖 runner 的偶然字体集合。
 
 ## 技术决策
 | 决策 | 理由 |

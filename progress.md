@@ -69,6 +69,7 @@
 | 31665885218 | 完整 CI | `1ca58d6` 的 Ubuntu/Windows Ruff、Mypy、Pytest、真实 UNC 与源码包全部通过 | pass |
 | 31667939630 | 完整 CI | `62b9e06` 源码包通过；Ubuntu/Windows 均仅在 `application.__all__` 的 RUF022 排序诊断处停止 | fail |
 | 31668089029 | 完整 CI | `fdfddf9` 源码包及双平台 Ruff 通过；双平台 Mypy 同在 3 处类型收窄失败，Pytest 未运行 | fail |
+| 31669097224 | 完整 CI | `bca41f6` 源码包、Ubuntu/Windows Ruff/Mypy/Pytest 与真实 UNC 全部通过 | pass |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -94,6 +95,26 @@
 | GUI 批次严格类型 | run `31668089029` 两平台共现 3 个根因 | 拆分 `boundary_id` 与两处 `mapping` 局部变量，并随精确 tick 批次推送验证 |
 | 规划文件同步 | 首次补丁把错误表上下文放错文件，补丁整体未应用 | 按文件真实上下文拆分后重新应用 |
 | GitHub 凭据上下文 | 沙箱内默认 `gh` 状态和 `known_hosts` 产生误判，提升权限后的首次命令又未继承仓库目录 | 使用本机用户凭据上下文，并以显式 `git -C`、SSH config/known_hosts 和远程 URL 验证；SSH 与 `gh` 均成功 |
+| UI 截图步骤未执行 | CI 条件误用 `runner.os == 'Ubuntu'`，绿色 run 中截图步骤持续 skipped | 改为 `runner.os == 'Linux'`，当前批次推送后下载 artifact 审查 |
+| PowerShell `rg` 路径通配符 | 将 `README*` 作为直接路径传给 `rg` 导致 Windows 路径错误，整组只读查询中断 | 改用 `--glob 'README*'`，没有重复错误命令 |
+| 应用服务模块路径假设 | 假定存在 `application/merge.py`，只读查询因文件不存在而中断 | 先用 `rg --files` 定位真实的 `application/services.py` 与 `application/models.py` |
+| UI 控件模块路径假设 | 假定存在 `ui/widgets.py`，只读查询因文件不存在而中断 | 改为先列出 `src/bdsubmerge/ui` 后读取真实控件模块 |
+| 截图矩阵补丁上下文 | 将 `progress.md` 的预期行误放入截图脚本补丁段，补丁整体未应用 | 拆成 workflow、脚本和进度日志三个真实上下文后重新应用 |
+| PowerShell `rg` 正则引号 | 双引号内的 `kind=\"preflight\"` 被 PowerShell 截断，导致正则未闭合 | 改用 PowerShell 单引号保护完整正则 |
+
+### UI 截图发布证据
+- **状态：** in_progress
+- Linux CI 显式安装 Noto CJK 字体，避免默认中文截图出现缺字或字体漂移。
+- 截图改为精确 PNG 路径的独立 artifact，缺失即失败并保留 30 天；JUnit/coverage 也改为精确路径硬门禁。
+- 截图场景通过共享应用服务生成完整映射、输出和报告预检；矩阵覆盖中英文、系统/浅色/深色及 150% 高 DPI，并要求四张图片哈希互异。
+- 下一步推送后核对截图 step、artifact 文件清单并人工审查 PNG。
+
+### GUI 异步状态一致性批次
+- **状态：** in_progress
+- 已完成显式整行字幕重排、解锁清 offset、非法时间线拖动回滚和运行中预检 pending。
+- 已冻结任务期间搜索、时间格式、offset、备注、高级开关与目录 drop，并修复任务失败终态和项目恢复 pending 泄漏。
+- 已将当前 `.bdsm.json` 加入普通字幕输出保护路径，防止 full-path 目标覆盖项目文件。
+- 已补对应 UI 回归测试；本地仅完成 JSON 解析、文本检查和 `git diff --check`，等待 GitHub Actions 验证。
 
 ## 五问重启检查
 | 问题 | 答案 |

@@ -137,3 +137,47 @@ def test_candidate_snapping_is_deterministic_and_can_be_disabled(
 
     assert timeline.snap_time(400_000) == (360_000, "chapter:2")
     assert timeline.snap_time(400_000, disabled=True) == (400_000, None)
+
+
+def test_invalid_episode_handle_move_rolls_back_without_orphan_boundary(
+    qtbot: QtBot,
+) -> None:
+    timeline = TimelineView()
+    qtbot.addWidget(timeline)
+    timeline.show_playlist(
+        _playlist(), item_label="Item", chapter_label="Chapter", empty_text="Empty"
+    )
+    timeline.set_episodes(
+        (
+            TimelineEpisode(
+                "episode-1",
+                "01.ass",
+                90_000,
+                360_000,
+                90_000,
+                360_000,
+            ),
+        )
+    )
+    moved: list[tuple[str, str, int, str]] = []
+    added: list[tuple[str, int]] = []
+    timeline.episode_boundary_moved.connect(
+        lambda episode_id, edge, ticks, boundary_id: moved.append(
+            (episode_id, edge, ticks, boundary_id)
+        )
+    )
+    timeline.user_boundary_added.connect(
+        lambda boundary_id, ticks: added.append((boundary_id, ticks))
+    )
+
+    accepted = timeline.move_episode_handle(
+        "episode-1",
+        "start",
+        450_000,
+        snapping_disabled=True,
+    )
+
+    assert accepted is False
+    assert timeline.user_boundaries == ()
+    assert moved == []
+    assert added == []

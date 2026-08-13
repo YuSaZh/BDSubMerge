@@ -197,6 +197,44 @@ class TimelineView(QGraphicsView):
         )
         return snapped_time, identifier
 
+    def move_episode_handle(
+        self,
+        episode_id: str,
+        edge: str,
+        raw_time_90k: int,
+        *,
+        snapping_disabled: bool = False,
+    ) -> bool:
+        time_90k, boundary_id = self.snap_time(
+            raw_time_90k,
+            disabled=snapping_disabled,
+        )
+        episode = next(
+            (item for item in self._episodes if item.id == episode_id),
+            None,
+        )
+        if (
+            episode is None
+            or edge not in {"start", "end"}
+            or (edge == "start" and time_90k >= episode.end_90k)
+            or (edge == "end" and time_90k <= episode.start_90k)
+        ):
+            self._render_scene()
+            return False
+        added_user_boundary = False
+        if boundary_id is None:
+            boundary_id = self._add_user_boundary(time_90k)
+            added_user_boundary = True
+        self.episode_boundary_moved.emit(
+            episode_id,
+            edge,
+            time_90k,
+            boundary_id,
+        )
+        if added_user_boundary:
+            self.user_boundary_added.emit(boundary_id, time_90k)
+        return True
+
     def _render_scene(self, *, fit: bool = False) -> None:
         scene = self.scene()
         scene.clear()
@@ -415,23 +453,14 @@ class TimelineView(QGraphicsView):
         edge = str(item.data(ITEM_EDGE_ROLE))
         x = max(0.0, min(item.pos().x(), self._timeline_width))
         raw_time = self._clamp_ticks(int(x * total / self._timeline_width))
-        time_90k, snapped_boundary_id = self.snap_time(
-            raw_time,
-            disabled=bool(event.modifiers() & Qt.KeyboardModifier.AltModifier),
-        )
-        added_user_boundary = False
-        if snapped_boundary_id is None:
-            snapped_boundary_id = self._add_user_boundary(time_90k)
-            added_user_boundary = True
-        item.setPos(time_90k * self._timeline_width / total, 0)
-        self.episode_boundary_moved.emit(
+        self.move_episode_handle(
             episode_id,
             edge,
-            time_90k,
-            snapped_boundary_id,
+            raw_time,
+            snapping_disabled=bool(
+                event.modifiers() & Qt.KeyboardModifier.AltModifier
+            ),
         )
-        if added_user_boundary:
-            self.user_boundary_added.emit(snapped_boundary_id, time_90k)
 
     @override
     def keyPressEvent(self, event: QKeyEvent) -> None:

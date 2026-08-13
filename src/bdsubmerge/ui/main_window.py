@@ -8,8 +8,24 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast, override
 
-from PySide6.QtCore import QByteArray, QPoint, QSettings, Qt, QThreadPool, QTimer, Slot
-from PySide6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDropEvent
+from PySide6.QtCore import (
+    QByteArray,
+    QItemSelectionModel,
+    QPoint,
+    QSettings,
+    Qt,
+    QThreadPool,
+    QTimer,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -103,6 +119,56 @@ from .timeline import (
 from .translations import TranslationCatalog
 
 
+class SubtitleMappingTable(QTableWidget):
+    rows_reordered = Signal(object, int)
+
+    @override
+    def startDrag(self, supported_actions: Qt.DropAction) -> None:
+        del supported_actions
+        super().startDrag(Qt.DropAction.CopyAction)
+
+    def _accept_internal_reorder(self, event: QDropEvent) -> bool:
+        accepted = (
+            event.source() is self
+            and event.mimeData().hasFormat("application/x-qabstractitemmodeldatalist")
+            and bool(event.possibleActions() & Qt.DropAction.CopyAction)
+        )
+        if accepted:
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+        return accepted
+
+    @override
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        self._accept_internal_reorder(event)
+
+    @override
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        self._accept_internal_reorder(event)
+
+    @override
+    def dropEvent(self, event: QDropEvent) -> None:
+        if not self._accept_internal_reorder(event):
+            return
+        source_rows = tuple(
+            sorted(index.row() for index in self.selectionModel().selectedRows(0))
+        )
+        if not source_rows:
+            event.ignore()
+            return
+
+        position = event.position().toPoint()
+        target = self.indexAt(position)
+        if target.isValid():
+            target_rect = self.visualRect(target)
+            insert_at = target.row() + int(position.y() >= target_rect.center().y())
+        else:
+            insert_at = self.rowCount()
+        self.rows_reordered.emit(source_rows, insert_at)
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -136,6 +202,8 @@ class MainWindow(QMainWindow):
         self.mapping_preflight_timer = QTimer(self)
         self.mapping_preflight_timer.setSingleShot(True)
         self.project_path: Path | None = None
+        self.pending_project_path: Path | None = None
+        self.pending_project_previous_bdmv = ""
         self.restored_mapping_locks: tuple[MappingLock, ...] = ()
         self.restored_mapping_snapshots: tuple[MappingSnapshot, ...] = ()
         self.pending_project: RestoredProject | None = None
@@ -157,6 +225,9 @@ class MainWindow(QMainWindow):
         self.loading_output_editor = False
         self.default_report_path: Path | None = None
         self.error_details: list[str] = []
+        self.active_task_kind = ""
+        self.task_failed = False
+        self.task_cancelled = False
 
         self.setAcceptDrops(True)
         self.setMinimumSize(980, 700)
@@ -265,12 +336,17 @@ class MainWindow(QMainWindow):
         subtitle_toolbar.addWidget(self.lock_button)
         subtitle_toolbar.addWidget(self.reset_mapping_button)
         subtitle_toolbar.addStretch()
-        self.mapping_table = QTableWidget(0, 11)
+        self.mapping_table = SubtitleMappingTable(0, 11)
         self.mapping_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.mapping_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
-        self.mapping_table.setDragDropMode(QTableWidget.DragDropMode.InternalMove)
+        self.mapping_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+        )
+        self.mapping_table.setDragDropMode(QTableWidget.DragDropMode.DragDrop)
         self.mapping_table.setDragEnabled(True)
         self.mapping_table.setAcceptDrops(True)
+        self.mapping_table.setDragDropOverwriteMode(False)
+        self.mapping_table.setDefaultDropAction(Qt.DropAction.CopyAction)
         self.mapping_table.setDropIndicatorShown(True)
         self.mapping_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents
@@ -482,6 +558,7 @@ class MainWindow(QMainWindow):
         self.mapping_table.itemSelectionChanged.connect(
             self.select_timeline_episode_from_table
         )
+        self.mapping_table.rows_reordered.connect(self._mapping_table_rows_reordered)
         self.output_mode.currentIndexChanged.connect(self.output_mode_changed)
         self.output_browse.clicked.connect(self.choose_output)
         self.output_directory_browse.clicked.connect(self.choose_output_directory)
@@ -714,6 +791,7 @@ class MainWindow(QMainWindow):
             lambda: self.bdmv_service.scan(request),
             self.translations.text("task.scanning"),
             self._scan_finished,
+            kind="project_scan" if self.pending_project is not None else "scan",
         )
 
     def _scan_finished(self, value: object) -> None:
@@ -1110,9 +1188,9 @@ class MainWindow(QMainWindow):
         except (OSError, ProjectSchemaError, ValueError) as error:
             self._record_error(str(error))
             return
-        self.project_path = project_path
         self.pending_project = restored
-        self.settings.setValue("recent/project", str(project_path))
+        self.pending_project_path = project_path
+        self.pending_project_previous_bdmv = self.path_edit.text()
         self._show_source_checks(restored)
         self.path_edit.setText(str(restored.state.bdmv_path))
         self.start_scan()
@@ -1184,22 +1262,77 @@ class MainWindow(QMainWindow):
         return tuple(snapshots)
 
     def _project_mappings(self) -> tuple[MappingSnapshot, ...]:
-        if self.prepared is None or self.prepared.mapping is None:
-            return self.restored_mapping_snapshots
-        return tuple(
-            MappingSnapshot(
-                mapping.episode_id,
-                mapping.start_boundary.id,
-                mapping.end_boundary.id,
-                int(mapping.start_boundary.time_90k),
-                int(mapping.end_boundary.time_90k),
-                int(mapping.manual_offset_90k),
-                mapping.locked or Path(mapping.subtitle_ref) in self.locked_subtitles,
-                mapping.confidence.value,
-                mapping.warnings,
+        if self.prepared is not None and self.prepared.mapping is not None:
+            snapshots = tuple(
+                MappingSnapshot(
+                    item.episode_id,
+                    item.start_boundary.id,
+                    item.end_boundary.id,
+                    int(item.start_boundary.time_90k),
+                    int(item.end_boundary.time_90k),
+                    int(item.manual_offset_90k),
+                    item.locked,
+                    item.confidence.value,
+                    item.warnings,
+                )
+                for item in self.prepared.mapping.mappings
             )
-            for mapping in self.prepared.mapping.mappings
-        )
+        else:
+            snapshots = self.restored_mapping_snapshots
+        locks_by_episode = {
+            item.episode_id: item for item in self._mapping_locks()
+        }
+        boundaries = self._boundary_by_id()
+        current: list[MappingSnapshot] = []
+        for snapshot in snapshots:
+            row = self._row_for_episode(snapshot.subtitle_id)
+            path = self._row_path(row) if row is not None else None
+            lock = locks_by_episode.get(snapshot.subtitle_id)
+            start_id = (
+                lock.start_boundary_id
+                if lock is not None
+                else snapshot.start_boundary_id
+            )
+            end_id = (
+                lock.end_boundary_id
+                if lock is not None
+                else snapshot.end_boundary_id
+            )
+            start = boundaries.get(start_id)
+            end = boundaries.get(end_id)
+            manual_offset_90k = (
+                int(lock.manual_offset_90k)
+                if lock is not None
+                else snapshot.manual_offset_90k
+            )
+            if path is not None:
+                manual_offset_90k = self.subtitle_offsets_90k.get(
+                    path,
+                    manual_offset_90k,
+                )
+            current.append(
+                replace(
+                    snapshot,
+                    start_boundary_id=start_id,
+                    end_boundary_id=end_id,
+                    start_90k=(
+                        int(start.time_90k)
+                        if start is not None
+                        else snapshot.start_90k
+                    ),
+                    end_90k=(
+                        int(end.time_90k)
+                        if end is not None
+                        else snapshot.end_90k
+                    ),
+                    manual_offset_90k=manual_offset_90k,
+                    locked=(
+                        lock is not None
+                        or (path is not None and path in self.locked_subtitles)
+                    ),
+                )
+            )
+        return tuple(current)
 
     def _project_output_state(self) -> OutputState:
         self._store_current_output_state()
@@ -1219,7 +1352,7 @@ class MainWindow(QMainWindow):
     def _continue_project_restore(self) -> None:
         assert self.pending_project is not None
         if self.selected_playlist is None:
-            self.pending_project = None
+            self._discard_pending_project_restore()
             self.statusBar().showMessage(
                 self.translations.text("status.project_incomplete"), 8000
             )
@@ -1255,9 +1388,10 @@ class MainWindow(QMainWindow):
                 lambda: self.subtitle_service.load_ordered(request),
                 self.translations.text("task.loading"),
                 self._project_subtitles_finished,
+                kind="project_subtitles",
             )
         else:
-            self.pending_project = None
+            self._discard_pending_project_restore()
             self.statusBar().showMessage(
                 self.translations.text("status.project_incomplete"), 8000
             )
@@ -1322,7 +1456,13 @@ class MainWindow(QMainWindow):
         self._show_timeline()
         self._update_actions()
         incomplete = self.pending_project.has_changed_sources
+        project_path = self.pending_project_path
+        if project_path is not None:
+            self.project_path = project_path
+            self.settings.setValue("recent/project", str(project_path))
         self.pending_project = None
+        self.pending_project_path = None
+        self.pending_project_previous_bdmv = ""
         status_key = "status.project_incomplete" if incomplete else "status.project_loaded"
         self.statusBar().showMessage(self.translations.text(status_key), 8000)
 
@@ -1550,6 +1690,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         if ordered == self.subtitle_paths or self.active_task is not None:
             return
+        current_path = self._row_path(self.mapping_table.currentRow())
         result = self.subtitle_result
         if result is not None:
             assets_by_path = {asset.path: asset for asset in result.assets}
@@ -1560,13 +1701,26 @@ class MainWindow(QMainWindow):
                 self.subtitle_paths = ordered
                 self.subtitle_result = replace(result, assets=ordered_assets)
                 self._clear_mapping_constraints()
+                self.subtitle_offsets_90k.clear()
                 self.mapping_dirty = True
                 self._populate_mapping_table()
-                self._select_subtitle_rows(selected_rows or set())
+                restored_rows = selected_rows or set()
+                current_row = (
+                    ordered.index(current_path)
+                    if current_path is not None and current_path in ordered
+                    else None
+                )
+                self._select_subtitle_rows(
+                    restored_rows,
+                    current_row=(
+                        current_row if current_row in restored_rows else None
+                    ),
+                )
                 self._invalidate_preflight()
                 return
         self.subtitle_paths = ordered
         self._clear_mapping_constraints()
+        self.subtitle_offsets_90k.clear()
         self.mapping_dirty = True
         self._reload_subtitles()
 
@@ -1578,11 +1732,31 @@ class MainWindow(QMainWindow):
         self.restored_mapping_snapshots = ()
         self.prepared = None
 
-    def _select_subtitle_rows(self, rows: set[int]) -> None:
-        self.mapping_table.clearSelection()
-        for row in sorted(rows):
-            if 0 <= row < self.mapping_table.rowCount():
-                self.mapping_table.selectRow(row)
+    def _select_subtitle_rows(
+        self,
+        rows: set[int],
+        *,
+        current_row: int | None = None,
+    ) -> None:
+        selection = self.mapping_table.selectionModel()
+        self.mapping_table.blockSignals(True)
+        try:
+            self.mapping_table.clearSelection()
+            for row in sorted(rows):
+                if 0 <= row < self.mapping_table.rowCount():
+                    selection.select(
+                        self.mapping_table.model().index(row, 0),
+                        QItemSelectionModel.SelectionFlag.Select
+                        | QItemSelectionModel.SelectionFlag.Rows,
+                    )
+            if current_row is not None and current_row in rows:
+                selection.setCurrentIndex(
+                    self.mapping_table.model().index(current_row, 0),
+                    QItemSelectionModel.SelectionFlag.NoUpdate,
+                )
+        finally:
+            self.mapping_table.blockSignals(False)
+        self.select_timeline_episode_from_table()
 
     def _sync_subtitle_order(self) -> None:
         if self.subtitle_result is None:
@@ -1595,8 +1769,61 @@ class MainWindow(QMainWindow):
         by_path = {asset.path: asset for asset in self.subtitle_result.assets}
         ordered_assets = tuple(by_path[path] for path in ordered_paths if path in by_path)
         if len(ordered_assets) == len(self.subtitle_result.assets):
-            self.subtitle_paths = ordered_paths
-            self.subtitle_result = replace(self.subtitle_result, assets=ordered_assets)
+            if ordered_paths != self.subtitle_paths:
+                selected_paths = {
+                    path
+                    for row in self.mapping_table.selectionModel().selectedRows(0)
+                    if (path := self._row_path(row.row())) is not None
+                }
+                selected_rows = {
+                    index
+                    for index, path in enumerate(ordered_paths)
+                    if path in selected_paths
+                }
+                self._apply_subtitle_order(
+                    ordered_paths,
+                    selected_rows=selected_rows,
+                )
+
+    @Slot(object, int)
+    def _mapping_table_rows_reordered(
+        self,
+        source_rows: object,
+        insert_at: int,
+    ) -> None:
+        if not isinstance(source_rows, tuple):
+            return
+        rows = tuple(
+            sorted({row for row in source_rows if isinstance(row, int)})
+        )
+        if (
+            self.active_task is not None
+            or len(rows) != len(source_rows)
+            or not rows
+            or not 0 <= insert_at <= len(self.subtitle_paths)
+            or any(not 0 <= row < len(self.subtitle_paths) for row in rows)
+        ):
+            return
+
+        original = list(self.subtitle_paths)
+        moved = [original[row] for row in rows]
+        remaining = [
+            path for row, path in enumerate(original) if row not in set(rows)
+        ]
+        adjusted_insert_at = insert_at - sum(row < insert_at for row in rows)
+        adjusted_insert_at = max(0, min(adjusted_insert_at, len(remaining)))
+        ordered = [
+            *remaining[:adjusted_insert_at],
+            *moved,
+            *remaining[adjusted_insert_at:],
+        ]
+        if ordered == original:
+            return
+        selected_rows = {
+            *range(adjusted_insert_at, adjusted_insert_at + len(moved))
+        }
+        self._apply_subtitle_order(ordered, selected_rows=selected_rows)
+        self._schedule_mapping_preflight()
 
     @Slot()
     def apply_batch_offset(self) -> None:
@@ -1631,6 +1858,10 @@ class MainWindow(QMainWindow):
                     self.locked_subtitles.add(path)
                 else:
                     self.locked_subtitles.discard(path)
+                    self.subtitle_offsets_90k[path] = 0
+                    offset_item = self.mapping_table.item(row, 7)
+                    if offset_item is not None:
+                        offset_item.setText("0 ms")
                     episode_id = self._episode_id_for_row(row)
                     self.restored_mapping_locks = tuple(
                         item
@@ -1875,6 +2106,7 @@ class MainWindow(QMainWindow):
             lambda: self.merge_service.prepare(request),
             self.translations.text("task.preparing"),
             lambda value: self._preflight_finished_for_revision(value, revision),
+            kind="preflight",
         )
 
     def _prepare_request(self) -> PrepareMergeRequest | None:
@@ -1899,7 +2131,10 @@ class MainWindow(QMainWindow):
             index_bdmv_path=self.scan_result.layout.index_bdmv_path,
             playlist_path=self.selected_playlist.path,
             disc_container_path=self.scan_result.layout.disc_container_path,
-            input_subtitle_paths=tuple(asset.path for asset in subtitle_result.assets),
+            input_subtitle_paths=(
+                *(asset.path for asset in subtitle_result.assets),
+                *((self.project_path,) if self.project_path is not None else ()),
+            ),
         )
         self._store_current_output_state()
         targets = tuple(
@@ -2010,10 +2245,14 @@ class MainWindow(QMainWindow):
             end_id = lock.end_boundary_id if lock is not None else mapping.end_boundary.id
             start = boundaries.get(start_id, mapping.start_boundary)
             end = boundaries.get(end_id, mapping.end_boundary)
-            manual_offset_90k = (
+            default_offset_90k = (
                 int(lock.manual_offset_90k)
                 if lock is not None
                 else int(mapping.manual_offset_90k)
+            )
+            manual_offset_90k = self.subtitle_offsets_90k.get(
+                Path(mapping.subtitle_ref),
+                default_offset_90k,
             )
             snapshots.append(
                 MappingSnapshot(
@@ -2023,7 +2262,8 @@ class MainWindow(QMainWindow):
                     int(start.time_90k),
                     int(end.time_90k),
                     manual_offset_90k,
-                    lock is not None,
+                    lock is not None
+                    or Path(mapping.subtitle_ref) in self.locked_subtitles,
                     mapping.confidence.value,
                     mapping.warnings,
                 )
@@ -2217,7 +2457,18 @@ class MainWindow(QMainWindow):
     @Slot()
     def select_timeline_episode_from_table(self) -> None:
         rows = self.mapping_table.selectionModel().selectedRows(0)
-        episode_id = self._episode_id_for_row(rows[0].row()) if rows else None
+        selected_rows = {index.row() for index in rows}
+        current_row = self.mapping_table.currentRow()
+        selected_row = (
+            current_row
+            if current_row in selected_rows
+            else rows[0].row() if rows else None
+        )
+        episode_id = (
+            self._episode_id_for_row(selected_row)
+            if selected_row is not None
+            else None
+        )
         self.timeline.set_selected_episode(episode_id)
 
     @Slot(str)
@@ -2403,6 +2654,8 @@ class MainWindow(QMainWindow):
         operation: Callable[[], object],
         status: str,
         success: Callable[[object], None],
+        *,
+        kind: str = "",
     ) -> None:
         if self.active_task is not None:
             return
@@ -2414,6 +2667,9 @@ class MainWindow(QMainWindow):
         task.signals.cancelled.connect(self._task_cancelled)
         task.signals.finished.connect(self._task_finished)
         self.active_task = task
+        self.active_task_kind = kind
+        self.task_failed = False
+        self.task_cancelled = False
         self.task_status.setText(status)
         self.progress.setValue(0)
         self.cancel_button.setEnabled(True)
@@ -2428,27 +2684,55 @@ class MainWindow(QMainWindow):
 
     @Slot(str, str)
     def _task_failed(self, message: str, details: str) -> None:
+        self.task_failed = True
+        self.task_status.setText(self.translations.text("task.failed"))
+        self._clear_failed_project_restore()
         self._record_error(f"{message}\n{details}")
 
     @Slot()
     def _task_cancelled(self) -> None:
+        self.task_cancelled = True
+        self._clear_failed_project_restore()
         self.task_status.setText(self.translations.text("task.cancelled"))
+
+    def _clear_failed_project_restore(self) -> None:
+        if self.active_task_kind in {"project_scan", "project_subtitles"}:
+            if self.active_task_kind == "project_scan":
+                self.path_edit.setText(self.pending_project_previous_bdmv)
+            self._discard_pending_project_restore()
+            self.pending_preflight = False
+            self.mapping_preflight_timer.stop()
+
+    def _discard_pending_project_restore(self) -> None:
+        self.pending_project = None
+        self.pending_project_path = None
+        self.pending_project_previous_bdmv = ""
+        self.pending_restore_after_scan = False
 
     @Slot()
     def _task_finished(self) -> None:
         was_cancelled = self.cancellation is not None and self.cancellation.cancelled
+        finished_kind = self.active_task_kind
         self.active_task = None
         self.active_preflight_revision = None
         self.cancellation = None
         self.cancel_button.setEnabled(False)
         self.progress.setValue(100)
-        if not was_cancelled:
+        task_succeeded = (
+            not was_cancelled
+            and not self.task_cancelled
+            and not self.task_failed
+        )
+        self.active_task_kind = ""
+        if task_succeeded:
             self.task_status.setText(self.translations.text("task.complete"))
         self._update_actions()
-        if self.pending_restore_after_scan:
+        if task_succeeded and self.pending_restore_after_scan:
             self.pending_restore_after_scan = False
             self._continue_project_restore()
-        elif self.pending_preflight:
+        elif self.pending_preflight and (
+            task_succeeded or finished_kind == "preflight"
+        ):
             self.mapping_preflight_timer.start(0)
 
     @Slot()
@@ -2593,6 +2877,8 @@ class MainWindow(QMainWindow):
     def _invalidate_preflight(self, *, preserve_mapping: bool = True) -> None:
         if preserve_mapping:
             self._capture_prepared_mapping()
+        if self.active_preflight_revision is not None:
+            self.pending_preflight = True
         self.preflight_revision += 1
         self.prepared = None
         self.preflight_summary.setPlainText(self.translations.text("preflight.waiting"))
@@ -2626,15 +2912,20 @@ class MainWindow(QMainWindow):
         self.move_subtitle_up_button.setEnabled(has_subtitle_rows)
         self.move_subtitle_down_button.setEnabled(has_subtitle_rows)
         self.natural_sort_button.setEnabled(has_subtitle_rows)
-        self.offset_button.setEnabled(has_subtitle_rows)
-        self.lock_button.setEnabled(has_subtitle_rows)
+        has_mapping = (
+            self.prepared is not None and self.prepared.mapping is not None
+        ) or bool(self.restored_mapping_snapshots)
+        self.offset_button.setEnabled(has_subtitle_rows and has_mapping)
+        self.lock_button.setEnabled(has_subtitle_rows and has_mapping)
         self.reset_mapping_button.setEnabled(has_subtitle_rows and has_playlist)
         self.path_edit.setEnabled(idle)
         self.choose_path_button.setEnabled(idle)
         self.playlist_table.setEnabled(idle)
+        self.playlist_search.setEnabled(idle)
         self.primary_playlist_combo.setEnabled(idle)
         self.mapping_table.setEnabled(idle)
         self.timeline.setEnabled(idle and has_playlist)
+        self.timeline_format.setEnabled(idle)
         self.output_mode.setEnabled(idle)
         self.output_directory.setEnabled(idle)
         self.output_directory_browse.setEnabled(idle)
@@ -2660,6 +2951,9 @@ class MainWindow(QMainWindow):
         ):
             widget.setEnabled(report_enabled)
         self.accept_low_confidence.setEnabled(idle)
+        self.offset_spin.setEnabled(idle)
+        self.project_notes.setEnabled(idle)
+        self.advanced_toggle.setEnabled(idle)
         self.open_button.setEnabled(idle)
         self.save_button.setEnabled(idle and has_playlist and has_subtitles)
 
@@ -2701,11 +2995,16 @@ class MainWindow(QMainWindow):
 
     @override
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        if event.mimeData().hasUrls():
+        if self.active_task is not None:
+            event.ignore()
+        elif event.mimeData().hasUrls():
             event.acceptProposedAction()
 
     @override
     def dropEvent(self, event: QDropEvent) -> None:
+        if self.active_task is not None:
+            event.ignore()
+            return
         paths = tuple(
             Path(url.toLocalFile()) for url in event.mimeData().urls() if url.isLocalFile()
         )

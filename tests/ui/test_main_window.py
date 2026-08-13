@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,7 @@ from bdsubmerge.output import (
     OutputPreset,
     PreflightResult,
     ResolvedOutput,
+    preflight_outputs,
 )
 from bdsubmerge.project import (
     FileFingerprint,
@@ -731,8 +733,10 @@ def test_adding_directory_preserves_manual_order_and_appends_naturally(
         operation: Callable[[], object],
         status: str,
         success: Callable[[object], None],
+        *,
+        kind: str = "",
     ) -> None:
-        del status
+        del status, kind
         success(operation())
 
     monkeypatch.setattr(window.subtitle_service, "load_ordered", load_ordered)
@@ -791,8 +795,10 @@ def test_project_restore_uses_saved_subtitle_order_and_encoding(
         operation: Callable[[], object],
         status: str,
         success: Callable[[object], None],
+        *,
+        kind: str = "",
     ) -> None:
-        del status
+        del status, kind
         success(operation())
 
     monkeypatch.setattr(window.subtitle_service, "load_ordered", load_ordered)
@@ -934,6 +940,226 @@ def test_mapping_table_and_timeline_selection_are_bidirectional(
         for index in window.mapping_table.selectionModel().selectedRows(0)
     ) == (0,)
     assert window.timeline._selected_episode_id == "episode-1"
+
+
+def test_mapping_table_reorder_updates_assets_and_invalidates_mapping(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, first_path, _ = _prepared_mapping_window(qtbot, tmp_path)
+    second_path = tmp_path / "episode-2.ass"
+    second_path.write_text("subtitle", encoding="utf-8")
+    assert window.subtitle_result is not None
+    first_asset = window.subtitle_result.assets[0]
+    second_asset = replace(first_asset, path=second_path)
+    window.subtitle_paths = [first_path, second_path]
+    window.subtitle_result = LoadSubtitlesResult(
+        (first_asset, second_asset),
+        SubtitleFormat.ASS,
+    )
+    window._populate_mapping_table()
+    window.mapping_table.selectRow(0)
+
+    def schedule() -> None:
+        window.pending_preflight = True
+
+    monkeypatch.setattr(window, "_schedule_mapping_preflight", schedule)
+
+    window._mapping_table_rows_reordered((0,), 2)
+
+    assert window.subtitle_paths == [second_path, first_path]
+    assert window.subtitle_result.assets == (second_asset, first_asset)
+    assert window.prepared is None
+    assert window.restored_mapping_locks == ()
+    assert window.restored_mapping_snapshots == ()
+    assert window.mapping_dirty is True
+    assert window.pending_preflight is True
+    assert window._row_path(1) == first_path
+    assert tuple(
+        index.row()
+        for index in window.mapping_table.selectionModel().selectedRows(0)
+    ) == (1,)
+
+
+def test_mapping_table_reorder_preserves_multiple_rows_at_bottom(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, first_path, _ = _prepared_mapping_window(qtbot, tmp_path)
+    assert window.subtitle_result is not None
+    first_asset = window.subtitle_result.assets[0]
+    paths = [
+        first_path,
+        *(tmp_path / f"episode-{index}.ass" for index in range(2, 5)),
+    ]
+    for path in paths[1:]:
+        path.write_text("subtitle", encoding="utf-8")
+    assets = tuple(replace(first_asset, path=path) for path in paths)
+    window.subtitle_paths = paths
+    window.subtitle_result = LoadSubtitlesResult(assets, SubtitleFormat.ASS)
+    window._populate_mapping_table()
+    monkeypatch.setattr(window, "_schedule_mapping_preflight", lambda: None)
+
+    window._mapping_table_rows_reordered((1, 2), 4)
+
+    expected_paths = [paths[0], paths[3], paths[1], paths[2]]
+    assert window.subtitle_paths == expected_paths
+    assert window.subtitle_result.assets == (
+        assets[0],
+        assets[3],
+        assets[1],
+        assets[2],
+    )
+    assert tuple(
+        index.row()
+        for index in window.mapping_table.selectionModel().selectedRows(0)
+    ) == (2, 3)
+
+
+def test_mapping_table_reorder_inside_selection_is_a_noop(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, first_path, prepared = _prepared_mapping_window(qtbot, tmp_path)
+    second_path = tmp_path / "episode-2.ass"
+    second_path.write_text("subtitle", encoding="utf-8")
+    assert window.subtitle_result is not None
+    first_asset = window.subtitle_result.assets[0]
+    window.subtitle_paths = [first_path, second_path]
+    window.subtitle_result = LoadSubtitlesResult(
+        (first_asset, replace(first_asset, path=second_path)),
+        SubtitleFormat.ASS,
+    )
+    window._populate_mapping_table()
+    scheduled: list[None] = []
+    monkeypatch.setattr(
+        window,
+        "_schedule_mapping_preflight",
+        lambda: scheduled.append(None),
+    )
+
+    window._mapping_table_rows_reordered((0, 1), 1)
+
+    assert window.subtitle_paths == [first_path, second_path]
+    assert window.prepared is prepared
+    assert scheduled == []
+
+
+def test_offset_and_lock_controls_require_an_existing_mapping(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    subtitle = tmp_path / "episode.ass"
+    subtitle.write_text("subtitle", encoding="utf-8")
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    asset = SubtitleAsset(
+        subtitle,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+        "utf-8",
+    )
+    window.subtitle_paths = [subtitle]
+    window.subtitle_result = LoadSubtitlesResult((asset,), SubtitleFormat.ASS)
+    window._populate_mapping_table()
+    window._update_actions()
+
+    assert window.offset_button.isEnabled() is False
+    assert window.lock_button.isEnabled() is False
+
+
+def test_unlock_clears_manual_offset_and_saved_mapping_state(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, subtitle, _ = _prepared_mapping_window(qtbot, tmp_path)
+    window.mapping_table.selectRow(0)
+    window.locked_subtitles.add(subtitle)
+    window.subtitle_offsets_90k[subtitle] = 11_250
+    window.restored_mapping_locks = (
+        MappingLock(
+            "episode-1",
+            "playlist:start",
+            "playlist:end",
+            MediaTick90k(11_250),
+        ),
+    )
+    monkeypatch.setattr(window, "_schedule_mapping_preflight", lambda: None)
+
+    window.toggle_rows_locked()
+
+    assert subtitle not in window.locked_subtitles
+    assert window.subtitle_offsets_90k[subtitle] == 0
+    assert window.mapping_table.item(0, 7).text() == "0 ms"
+    assert window.restored_mapping_locks == ()
+    assert window.prepared is None
+    saved = window._project_mappings()
+    assert saved[0].manual_offset_90k == 0
+    assert saved[0].locked is False
+
+
+def test_project_mapping_uses_current_offset_before_repreflight(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path)
+    window.mapping_table.selectRow(0)
+    window.offset_spin.setValue(125)
+    monkeypatch.setattr(window, "_schedule_mapping_preflight", lambda: None)
+
+    window.apply_batch_offset()
+
+    assert window.prepared is None
+    saved = window._project_mappings()
+    assert saved[0].manual_offset_90k == 11_250
+    assert saved[0].locked is True
+
+
+def test_invalidation_during_preflight_requests_a_fresh_run(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path)
+    window.active_preflight_revision = window.preflight_revision
+    window.pending_preflight = False
+
+    window._invalidate_preflight()
+
+    assert window.pending_preflight is True
+
+
+def test_current_project_file_is_protected_from_subtitle_output(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path)
+    project_path = tmp_path / "workspace.bdsm.json"
+    window.project_path = project_path
+    window.output_mode.setCurrentIndex(window.output_mode.findData("full_path"))
+    window.output_path.setText(str(project_path))
+
+    request = window._prepare_request()
+
+    assert request is not None
+    assert request.output_context is not None
+    assert project_path in request.output_context.input_subtitle_paths
+    output_preflight = preflight_outputs(
+        request.output_targets,
+        request.output_context,
+        require_existing_sources=False,
+    )
+    assert "overwrites_input" in {issue.code for issue in output_preflight.errors}
 
 
 def test_boundary_combo_creates_lock_and_schedules_mapping_preflight(

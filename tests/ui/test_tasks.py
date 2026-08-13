@@ -1,10 +1,12 @@
 from pathlib import Path
 from threading import Event
+from typing import cast
 
 from PySide6.QtCore import QSettings, Qt, QThreadPool
 from pytestqt.qtbot import QtBot
 
 from bdsubmerge.cancellation import raise_if_cancelled
+from bdsubmerge.project import RestoredProject
 from bdsubmerge.ui.main_window import MainWindow
 from bdsubmerge.ui.tasks import CancellationToken, ServiceTask
 
@@ -75,11 +77,23 @@ def test_ac09_window_remains_responsive_and_cancel_suppresses_success(
         release.wait(timeout=3)
         return "must be suppressed"
 
-    window._start_task(blocking_operation, "blocked", successes.append)
+    window.pending_project = cast(RestoredProject, object())
+    window.pending_restore_after_scan = True
+    window._start_task(
+        blocking_operation,
+        "blocked",
+        successes.append,
+        kind="project_scan",
+    )
     qtbot.waitUntil(started.is_set, timeout=3000)
 
     qtbot.mouseClick(window.advanced_toggle, Qt.MouseButton.LeftButton)
-    assert window.advanced_toggle.isChecked() is True
+    assert window.advanced_toggle.isChecked() is False
+    assert window.advanced_toggle.isEnabled() is False
+    assert window.playlist_search.isEnabled() is False
+    assert window.timeline_format.isEnabled() is False
+    assert window.offset_spin.isEnabled() is False
+    assert window.project_notes.isEnabled() is False
     assert window.active_task is not None
 
     window.cancel_active_task()
@@ -88,4 +102,25 @@ def test_ac09_window_remains_responsive_and_cancel_suppresses_success(
 
     assert successes == []
     assert window.cancellation is None
+    assert window.pending_project is None
+    assert window.pending_restore_after_scan is False
     assert window.task_status.text() == window.translations.text("task.cancelled")
+
+
+def test_failed_project_task_keeps_failure_status_and_clears_restore_state(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    window.pending_project = cast(RestoredProject, object())
+    window.pending_restore_after_scan = True
+    window.active_task_kind = "project_subtitles"
+
+    window._task_failed("boom", "trace")
+    window._task_finished()
+
+    assert window.pending_project is None
+    assert window.pending_restore_after_scan is False
+    assert window.task_status.text() == window.translations.text("task.failed")
+    assert "boom" in window.error_panel.toPlainText()

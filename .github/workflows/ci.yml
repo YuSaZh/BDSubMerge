@@ -26,7 +26,9 @@ jobs:
           cache: pip
       - name: Install Qt runtime libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes libegl1
+        run: >-
+          sudo apt-get update &&
+          sudo apt-get install --yes fonts-noto-cjk libegl1
       - name: Install project
         run: >-
           python -m pip install --upgrade pip &&
@@ -60,17 +62,58 @@ jobs:
             Remove-SmbShare -Name $env:BDSUBMERGE_TEST_SHARE -Force -ErrorAction SilentlyContinue
           }
       - name: Capture offscreen UI workspace
-        if: runner.os == 'Ubuntu'
+        if: runner.os == 'Linux'
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python tests/ui/capture_workspace.py reports/ui-main-window.png
+        run: |
+          python tests/ui/capture_workspace.py \
+            reports/ui-zh-light.png --locale zh_CN --theme light
+          python tests/ui/capture_workspace.py \
+            reports/ui-en-dark.png --locale en_US --theme dark
+          python tests/ui/capture_workspace.py \
+            reports/ui-zh-system.png --locale zh_CN --theme system
+          QT_SCALE_FACTOR=1.5 python tests/ui/capture_workspace.py \
+            reports/ui-en-light-high-dpi.png --locale en_US --theme light \
+            --minimum-device-pixel-ratio 1.5
+      - name: Verify UI screenshot matrix
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          screenshots=(
+            reports/ui-zh-light.png
+            reports/ui-en-dark.png
+            reports/ui-zh-system.png
+            reports/ui-en-light-high-dpi.png
+          )
+          for screenshot in "${screenshots[@]}"; do
+            test -s "$screenshot"
+          done
+          sha256sum "${screenshots[@]}"
+          unique_hashes=$(sha256sum "${screenshots[@]}" | awk '{print $1}' | sort -u | wc -l)
+          test "$unique_hashes" -eq "${#screenshots[@]}"
+      - name: Upload UI workspace screenshot
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-workspace-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            reports/ui-zh-light.png
+            reports/ui-en-dark.png
+            reports/ui-zh-system.png
+            reports/ui-en-light-high-dpi.png
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: test-reports-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: reports
-          if-no-files-found: warn
+          path: |
+            reports/junit.xml
+            reports/coverage.xml
+          if-no-files-found: error
+          retention-days: 30
 
   source-distribution:
     name: Source distribution
