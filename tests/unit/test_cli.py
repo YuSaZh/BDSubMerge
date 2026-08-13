@@ -9,15 +9,21 @@ import pytest
 
 import bdsubmerge.cli as cli_module
 from bdsubmerge.application import (
+    ApplicationIssue,
+    ApplicationSeverity,
+    ExecuteMergeRequest,
+    ExecuteMergeResult,
     InspectRequest,
     InspectResult,
     MergeApplicationService,
     MergeReportFormat,
+    PreparedMerge,
+    PrepareMergeRequest,
     ScanRequest,
     ScanResult,
     SubtitleApplicationService,
 )
-from bdsubmerge.cli import CliServices, ExitCode, build_parser, main
+from bdsubmerge.cli import CliIssue, CliServices, ExitCode, build_parser, main
 from bdsubmerge.domain.models import (
     BdmvLayout,
     PlayItemInfo,
@@ -32,6 +38,7 @@ from bdsubmerge.output import (
     OutputPreset,
     PreflightResult,
     ResolvedOutput,
+    WriteReceipt,
 )
 from bdsubmerge.project import (
     BoundarySnapshot,
@@ -183,6 +190,93 @@ def test_parser_defines_every_required_command_and_postfix_common_flags() -> Non
         assert parsed.json is True
         assert parsed.dry_run is True
         assert parsed.verbose is True
+
+
+@pytest.mark.parametrize("accepted", (False, True))
+def test_merge_accept_warnings_flag_reaches_shared_execute_service(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    accepted: bool,
+) -> None:
+    project = _project(tmp_path)
+    prepared = PreparedMerge(None, None, None, None, ())
+
+    @dataclass
+    class CapturingMergeService:
+        requests: list[ExecuteMergeRequest]
+
+        def prepare(self, request: PrepareMergeRequest) -> PreparedMerge:
+            raise AssertionError(f"unexpected prepare request: {request}")
+
+        def execute(self, request: ExecuteMergeRequest) -> ExecuteMergeResult:
+            self.requests.append(request)
+            return ExecuteMergeResult(prepared, False, WriteReceipt((), ()))
+
+    merge = CapturingMergeService([])
+    services = replace(_services(tmp_path), merge=merge)
+    preparation_acceptance: list[bool] = []
+
+    def prepare_project(
+        *args: object,
+        **kwargs: object,
+    ) -> tuple[PreparedMerge, tuple[CliIssue, ...]]:
+        del args
+        preparation_acceptance.append(bool(kwargs["accept_low_confidence"]))
+        return prepared, ()
+
+    monkeypatch.setattr(cli_module, "_load_project", lambda *args: project)
+    monkeypatch.setattr(cli_module, "check_project_sources", lambda *args, **kwargs: ())
+    monkeypatch.setattr(cli_module, "_prepare_project", prepare_project)
+    arguments = ["merge", str(tmp_path / "show.bdsm.json")]
+    if accepted:
+        arguments.append("--accept-warnings")
+
+    result = cli_module._project_operation(build_parser().parse_args(arguments), services)
+
+    assert result.exit_code is ExitCode.OK
+    assert preparation_acceptance == [accepted]
+    assert len(merge.requests) == 1
+    assert merge.requests[0].accept_warnings is accepted
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (("validate", "show.bdsm.json"), ("merge", "show.bdsm.json", "--dry-run")),
+)
+def test_project_operations_report_shared_preflight_issues_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: tuple[str, ...],
+) -> None:
+    project = _project(tmp_path)
+    application_issue = ApplicationIssue(
+        ApplicationSeverity.WARNING,
+        "playlist_warning",
+        "selected playlist requires review",
+        "00001.mpls",
+    )
+    cli_issue = CliIssue(
+        "warning",
+        application_issue.code,
+        application_issue.message,
+        application_issue.source,
+    )
+    prepared = PreparedMerge(None, None, None, None, (application_issue,))
+
+    monkeypatch.setattr(cli_module, "_load_project", lambda *args: project)
+    monkeypatch.setattr(cli_module, "check_project_sources", lambda *args, **kwargs: ())
+    monkeypatch.setattr(
+        cli_module,
+        "_prepare_project",
+        lambda *args, **kwargs: (prepared, (cli_issue,)),
+    )
+
+    result = cli_module._project_operation(
+        build_parser().parse_args(arguments),
+        _services(tmp_path),
+    )
+
+    assert [issue for issue in result.issues if issue == cli_issue] == [cli_issue]
 
 
 def test_scan_json_has_stable_envelope_and_uses_application_request(tmp_path: Path) -> None:

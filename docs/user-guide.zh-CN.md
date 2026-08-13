@@ -71,12 +71,14 @@ ASS/SSA 会保留 Dialogue、Comment、声明的 `Format` 字段顺序、样式�
 写入前会检查源文件指纹、播放列表时间线、映射完整性和顺序、输出扩展名、目录、
 文件冲突、重复目标、输入/输出重合及 JRiver 命名。结果分为错误、警告和信息。
 
-任一错误会阻止所有输出。多目标任务先完成整体预检，之后才会统一暂存、验证并提交；
-失败时执行回滚。
+任一错误会阻止所有输出。警告会保留在验证和 dry-run 结果中，但实际写入前必须在 GUI
+明确确认，或在 CLI 传入 `--accept-warnings`；信息无需确认。多目标任务先完成整体预检，
+之后才会统一暂存、验证并提交；失败时执行回滚。
 
 ```powershell
 bdsubmerge validate "D:\Projects\Title.bdsm.json" --json --verbose
 bdsubmerge merge "D:\Projects\Title.bdsm.json" --dry-run --json
+bdsubmerge merge "D:\Projects\Title.bdsm.json" --accept-warnings --json
 ```
 
 `validate` 会重建计划和输出预检。`merge --dry-run` 继续执行 prepare/execute 检查并报告
@@ -125,7 +127,7 @@ bdsubmerge scan <path> [--max-depth N] [--subtitle-duration-90k TICKS] [--subtit
 bdsubmerge inspect <mpls> [--max-depth N]
 bdsubmerge plan <project.bdsm.json>
 bdsubmerge validate <project.bdsm.json>
-bdsubmerge merge <project.bdsm.json> [--dry-run]
+bdsubmerge merge <project.bdsm.json> [--dry-run] [--accept-warnings]
   [--report <path>] [--report-format json|text]
   [--report-collision abort|overwrite|backup|auto_rename]
 ```

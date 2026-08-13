@@ -209,15 +209,23 @@ def test_ac08_low_confidence_requires_explicit_confirmation(tmp_path: Path) -> N
         (FullPathOutputTarget("output", path=tmp_path / "out.ass"),),
     )
 
-    blocked = MergeApplicationService().prepare(request)
+    service = MergeApplicationService()
+    prepared = service.prepare(request)
 
-    assert blocked.mapping is not None
-    assert blocked.mapping.has_low_confidence is True
-    assert blocked.ready is False
-    assert "low_mapping_confidence" in {issue.code for issue in blocked.issues}
+    assert prepared.mapping is not None
+    assert prepared.mapping.has_low_confidence is True
+    assert prepared.ready is True
+    assert "low_mapping_confidence" in {issue.code for issue in prepared.issues}
 
-    accepted = MergeApplicationService().prepare(
-        replace(request, accept_low_confidence=True)
+    blocked = service.execute(ExecuteMergeRequest(prepared))
+
+    assert blocked.succeeded is False
+    assert "warnings_not_accepted" in {issue.code for issue in blocked.issues}
+    assert not (tmp_path / "out.ass").exists()
+
+    accepted = service.execute(
+        ExecuteMergeRequest(prepared, accept_warnings=True)
     )
 
-    assert accepted.ready is True
+    assert accepted.succeeded is True
+    assert (tmp_path / "out.ass").is_file()

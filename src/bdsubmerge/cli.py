@@ -153,6 +153,11 @@ def build_parser() -> argparse.ArgumentParser:
         _add_common_options(command, suppress=True)
         if name == "merge":
             command.add_argument(
+                "--accept-warnings",
+                action="store_true",
+                help="explicitly accept preflight warnings before writing output",
+            )
+            command.add_argument(
                 "--report",
                 type=Path,
                 help="atomically write an optional merge report",
@@ -312,11 +317,13 @@ def _project_operation(
         )
 
     report_target = _report_target(arguments) if arguments.command == "merge" else None
+    accept_warnings = bool(getattr(arguments, "accept_warnings", False))
     prepared, preparation_issues = _prepare_project(
         project,
         project_path,
         services,
         report_target=report_target,
+        accept_low_confidence=accept_warnings,
     )
     if prepared is None:
         return CommandResult(
@@ -326,7 +333,9 @@ def _project_operation(
             preparation_issues,
         )
     if arguments.command == "validate":
-        issues = (*preparation_issues, *_application_issues(prepared.issues))
+        issues = _unique_cli_issues(
+            (*preparation_issues, *_application_issues(prepared.issues))
+        )
         return CommandResult(
             "validate",
             ExitCode.OK if prepared.ready else ExitCode.VALIDATION_FAILED,
@@ -335,11 +344,17 @@ def _project_operation(
         )
 
     executed = services.merge.execute(
-        ExecuteMergeRequest(prepared, dry_run=bool(arguments.dry_run))
+        ExecuteMergeRequest(
+            prepared,
+            dry_run=bool(arguments.dry_run),
+            accept_warnings=accept_warnings,
+        )
     )
-    issues = (
-        *preparation_issues,
-        *_application_issues((*prepared.issues, *executed.issues)),
+    issues = _unique_cli_issues(
+        (
+            *preparation_issues,
+            *_application_issues((*prepared.issues, *executed.issues)),
+        )
     )
     data = _prepared_data(prepared, check_data, project)
     data["dry_run"] = executed.dry_run
@@ -363,6 +378,7 @@ def _prepare_project(
     services: CliServices,
     *,
     report_target: MergeReportTarget | None = None,
+    accept_low_confidence: bool = False,
 ) -> tuple[PreparedMerge | None, tuple[CliIssue, ...]]:
     structure_issues = _project_structure_issues(project)
     if structure_issues:
@@ -416,7 +432,7 @@ def _prepare_project(
                 keep_events_ending_before_zero=policy.keep_events_ending_before_zero,
                 clip_negative_starts=policy.clip_negative_starts,
             ),
-            accept_low_confidence=True,
+            accept_low_confidence=accept_low_confidence,
             report_target=report_target,
         )
     )
@@ -705,6 +721,10 @@ def _application_issues(issues: Sequence[ApplicationIssue]) -> tuple[CliIssue, .
         CliIssue(issue.severity.value, issue.code, issue.message, issue.source)
         for issue in issues
     )
+
+
+def _unique_cli_issues(issues: Sequence[CliIssue]) -> tuple[CliIssue, ...]:
+    return tuple(dict.fromkeys(issues))
 
 
 def _json_value(value: object) -> object:

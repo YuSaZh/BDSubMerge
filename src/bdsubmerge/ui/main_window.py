@@ -2882,7 +2882,7 @@ class MainWindow(QMainWindow):
         )
         if warnings and not self._confirm_preflight_warnings(warnings):
             return
-        request = ExecuteMergeRequest(self.prepared)
+        request = ExecuteMergeRequest(self.prepared, accept_warnings=bool(warnings))
         self._start_task(
             lambda: self.merge_service.execute(request),
             self.translations.text("task.writing"),

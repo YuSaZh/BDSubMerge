@@ -560,12 +560,16 @@ class MergeApplicationService:
         if request.require_existing_sources:
             sources, source_issues = _prepare_sources(request)
             issues.extend(source_issues)
+        issues.extend(
+            _warning("playlist_warning", message, str(request.playlist.path))
+            for message in request.playlist.warnings
+        )
+        issues.extend(request.subtitles.issues)
         if not request.playlist.is_available:
             issues.append(_error("playlist_unavailable", "selected playlist is unavailable"))
         if not request.subtitles.ready:
-            issues.extend(request.subtitles.issues)
             issues.append(_error("subtitles_not_ready", "ordered subtitles are not ready"))
-        if issues:
+        if any(issue.severity is ApplicationSeverity.ERROR for issue in issues):
             return PreparedMerge(
                 None,
                 None,
@@ -633,7 +637,7 @@ class MergeApplicationService:
             )
         if mapping.has_low_confidence and not request.accept_low_confidence:
             issues.append(
-                _error(
+                _warning(
                     "low_mapping_confidence",
                     "low-confidence automatic mapping requires explicit confirmation",
                 )
@@ -817,6 +821,27 @@ class MergeApplicationService:
                 request.dry_run,
                 None,
                 source_issues,
+            )
+        warnings = tuple(
+            issue
+            for issue in prepared.issues
+            if issue.severity is ApplicationSeverity.WARNING
+        )
+        if warnings and not request.dry_run and not request.accept_warnings:
+            record_runtime_event(
+                "merge_warnings_not_accepted",
+                warning_codes=tuple(issue.code for issue in warnings),
+            )
+            return ExecuteMergeResult(
+                prepared,
+                False,
+                None,
+                (
+                    _error(
+                        "warnings_not_accepted",
+                        f"{len(warnings)} preflight warning(s) require explicit confirmation",
+                    ),
+                ),
             )
         if request.dry_run:
             return ExecuteMergeResult(prepared, True, None)

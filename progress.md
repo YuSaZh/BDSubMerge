@@ -26,10 +26,20 @@
 - 四张截图哈希与上一绿色批次一致，人工检查无重叠、截断、CJK 缺字或视觉回归。
 
 ### 预检 warning 明确确认批次
-- **状态：** in_progress
+- **状态：** complete
 - 任务书 18 节要求 error 禁止输出、warning 由用户确认后输出、info 无需确认；当前应用层 `PreparedMerge.ready` 已负责 error 门禁。
 - GUI 仅在 ready 预检包含 warning 时显示双语确认框，默认按钮和 ESC 都是“否”；拒绝不启动后台写入，确认后才创建执行请求，无 warning 的正常流程不增加点击。
 - 已补 warning 拒绝/确认、info 直接生成、error 不输出及确认框默认值/本地化的远程测试代码；本机不执行测试、lint、类型检查或构建。
+- 提交 `615d955` / run `31682267166` 已全绿：源码包、Ubuntu/Windows Ruff、Mypy、Pytest、真实 Windows UNC 和 Linux 四态截图矩阵全部通过。
+- JUnit artifact 显示 Ubuntu 280 项中 278 passed、2 skipped，Windows 280 passed，均为 0 failures / 0 errors；coverage XML 行覆盖率为 87.21%/87.19%，终端综合覆盖率为 83.47%/83.46%。
+- 已审计 artifacts `9173966862`、`9173955837`、`9173955449`：四张 PNG 尺寸和 SHA256 与 Actions 日志一致、哈希互异，目视无重叠、截断、CJK 缺字或视觉回归。
+
+### 共享应用服务 warning 门禁批次
+- **状态：** in_progress
+- 后续静态审计发现 `615d955` 只在 GUI 调用前确认，其他调用者仍可直接执行带 warning 的 `PreparedMerge`；CLI 还会默认接受低置信度，与任务书和共享应用服务边界不一致。
+- 当前实现让 prepare 保留播放列表、字幕、映射、合并和输出 warning，`execute()` 在真实写入前统一要求 `accept_warnings=True`；dry-run 和 validate 保持无写入预览语义。
+- GUI 仅在确认后传入接受标志；CLI 新增显式 `--accept-warnings`，并同步双语用户指南。已补共享服务、AC08、GUI 和 CLI 参数穿透的远程测试代码。
+- 提交前静态审查已完成：全部执行调用点按真实 warning 来源核对，CLI 重复诊断已保序去重；14 个修改文件通过 `git diff --check`，所有修改 Python 文件均不超过 100 字符，等待精确提交的 Actions 验证。
 
 ### M0-M4 基线
 - **状态：** complete
@@ -107,6 +117,7 @@
 | 31679107948 | 完整 CI | `64e22a3` 源码包、双平台 Ruff/Mypy/Pytest、真实 Windows UNC、四态 UI 截图与 artifact 全部通过 | pass |
 | 31679478339 | Windows Package | `64e22a3` x64 onedir、许可证、ZIP/SHA256、中文空格路径无 Python EXE 烟测与 artifact 全部通过 | pass |
 | 31681278331 | 完整 CI | `e5ae7b5` 源码包、双平台 Ruff/Mypy/Pytest、真实 Windows UNC、Linux 四态 UI 截图矩阵与 artifacts 全部通过 | pass |
+| 31682267166 | 完整 CI | `615d955` 源码包、双平台 Ruff/Mypy、Ubuntu 278 passed / 2 skipped、Windows 280 passed、真实 UNC 与四态截图全部通过 | pass |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -150,6 +161,8 @@
 | 详情补充字段语义 | 仅凭旧 formatter 变量名一度把指纹第四项标成连接条件，实际构造源 `equivalence.py` 使用 `selected_angle` | 按构造契约改为选中角度，并同步 Qt/非 Qt 格式化断言 |
 | 详情批次远程 Ruff | run `31678423407` 双平台仅报新增中文断言的 10 个全角标点 RUF001 | 对精确 UI 预期字符串添加逐行 `noqa`，不改用户可见中文 |
 | 详情批次远程 Ruff 续报 | run `31678761361` 显示首轮 annotations 未列全的 9 个同类诊断 | 静态扫描本批全部 Python 文件的全角括号、冒号和逗号，一次性补齐逐行豁免 |
+| CI 流式监控超时 | `gh run watch` 的本地命令上限设为 1 秒，监控进程先于远程 run 完成被终止 | 改用 `gh run view` 短查询轮询精确 run ID，不将本地监控超时视为 CI 失败 |
+| PowerShell `rg` 组合正则引号 | 双引号命令中的转义破坏字符组，导致正则未闭合且整组只读查询停止 | 后续拆分查询或使用 PowerShell 单引号保护正则，不重复失败命令 |
 
 ### UI 截图发布证据
 - **状态：** complete
@@ -169,11 +182,19 @@
 ### 工作模型更新
 - **状态：** complete
 - 当前 goal 已处于 active，目标是完成 BDSubMerge 1.0；仓库级 `AGENTS.md` 约束已作为后续工作的硬边界。
-- 当前 `main`、`origin/main` 与 GitHub 远程 HEAD 均为 `e5ae7b550ba7ad634bf65d1bc2140fee3d01c53f`；远程绿色基线更新为该提交及 run `31681278331`，任何后续改动仍必须由自己的精确 SHA 重新通过 Actions，不能继承该绿灯。
+- 当前已验证代码基线为 `615d95598d34243324ecb90d749005e5747d7c01` / run `31682267166`；任何后续改动仍必须由自己的精确 SHA 重新通过 Actions，不能继承该绿灯。
 - 本轮开始时前序源指纹、输出目标和 GUI 失败终态修复已完成提交与推送，源码工作树干净；仅本次工作模型记录产生规划文件变更。
 - 后续执行模型固定为本地静态审计和编辑、`git diff --check`、提交、使用本机凭据推送、等待并审计同 SHA GitHub Actions；本地不执行任何构建、测试、lint、类型检查、依赖安装或打包。
 - 发布候选必须在同一 SHA 上闭环 CI、Windows Package、ZIP/SHA256、许可证、版本一致性和最终 EXE 视觉证据，再创建 `v1.0.0` tag/Release。
 - 本机凭据已实测可用：SSH 读取远程成功，`gh` keyring 的活动账号为 `YuSaZh`、Git 协议为 SSH 且具备 `repo` 权限；无需浏览器登录或补装本机开发环境。
+
+### 共享 warning 门禁批次
+- **状态：** in_progress
+- 已恢复并静态审查 13 个未提交文件；共享应用服务、GUI 与 CLI 的显式确认穿透方向符合任务书严重度契约。
+- 当前正在审查全部 `ExecuteMergeRequest` 调用及其真实预检 warning 来源，重点是 overwrite、auto-rename、SUP 估算时长和 AC-06 恢复后再次合并；本地未执行测试、lint、类型检查、构建或应用代码。
+- 全部调用点静态审查完成：真实 warning 的成功写入均显式接受；AC-06 auto-rename 仅为 info，已补严重度断言，避免未来误放宽确认门禁。CLI 测试替身返回类型也已改为明确的 `tuple[CliIssue, ...]`。
+- 静态审查发现共享 prepare 与 CLI preliminary 会重复汇总同一 playlist/subtitle warning；已在 CLI 最终结果边界按完整诊断保序去重，并补 validate 与 merge dry-run 回归。
+- 14 个修改文件的静态检查已完成：`git diff --check` 通过，修改 Python 文件无超过 100 字符的行；按仓库约束未在本地运行代码，下一步提交并推送 GitHub Actions。
 
 ### 实际任务进度批次
 - **状态：** complete

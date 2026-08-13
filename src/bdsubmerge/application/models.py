@@ -184,6 +184,7 @@ class PreparedMerge:
 class ExecuteMergeRequest:
     prepared: PreparedMerge
     dry_run: bool = False
+    accept_warnings: bool = False
 
 
 @dataclass(frozen=True, slots=True)

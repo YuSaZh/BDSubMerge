@@ -46,6 +46,10 @@
 - 发布前静态审计确认输出目标目录可被 collision 流程误处理、业务写入失败可被 GUI 显示为完成、普通会话未复核加载时源指纹。本批同时在共享应用/输出层修复，确保 CLI 与 GUI 使用同一安全契约；warning 确认和项目重定位仍为后续独立批次。
 - commit `e5ae7b5` / run `31681278331` 已闭环上述源指纹、输出目标和 GUI 终态修复：源码包、Ubuntu/Windows Ruff、Mypy、Pytest、真实 Windows UNC 和 Linux 四态截图矩阵全部成功，现为远程绿色基线；Windows Package 仍需在统一 `1.0.0` 的最终候选上重新验证。
 - 任务书 18 节的严重度契约要求 error 阻断、warning 明确确认后输出、info 无需确认；当前应用层 `PreparedMerge.ready` 已阻断 error，GUI 只需对 ready 状态中的 warning 增加默认 No 且 ESC 为 No 的双语确认，不改变 CLI 和无 warning 流程。
+- commit `615d955` / run `31682267166` 已闭环 warning 明确确认：源码包、双平台 Ruff/Mypy、Ubuntu 278 passed / 2 skipped、Windows 280 passed、真实 Windows UNC 和四态截图矩阵全部成功；coverage XML 行覆盖率为 87.21%/87.19%。
+- `615d955` 的绿灯只证明 GUI 在调用 execute 前询问；共享 `MergeApplicationService.execute()` 尚未强制确认，CLI 也曾静默传入低置信度接受标志。门禁必须下沉到应用服务，并由 GUI 确认结果和 CLI `--accept-warnings` 显式穿透，才能满足分层契约且不可被其他调用者绕过。
+- 共享 warning 门禁批次的主路径已静态确认：`prepare()` 汇总 playlist、subtitle、低置信度、merge 与 output warning，`execute()` 仅在真实写入且 warning 未接受时返回 `warnings_not_accepted`，dry-run 保持零写入成功。全部 `ExecuteMergeRequest` 调用已逐项核对：overwrite、SUP 估算与低置信度接受分支显式确认；AC-06 的 auto-rename 仅产生 info，保持默认拒绝 warning 并新增严重度回归断言。
+- 共享 prepare 接管 playlist/subtitle warning 后，CLI 成功路径仍同时拼接 scan/inspect/subtitle preliminary issues，可能让同一诊断重复出现；CLI 最终汇总现按完整 `CliIssue` 保序去重，既保留 scan 独有诊断，也避免 validate 和 merge dry-run 重复展示。
 
 ## 技术决策
 | 决策 | 理由 |

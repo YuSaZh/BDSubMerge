@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from bdsubmerge.application import (
+    ApplicationIssue,
+    ApplicationSeverity,
     ExecuteMergeRequest,
     LoadSubtitlesRequest,
     MergeApplicationService,
@@ -173,6 +175,101 @@ def test_prepare_merges_and_dry_run_never_writes(tmp_path: Path) -> None:
     assert not destination.exists()
 
 
+def test_prepare_carries_playlist_and_subtitle_warnings(tmp_path: Path) -> None:
+    layout = _layout(tmp_path)
+    playlist = replace(
+        _playlist(layout),
+        warnings=("selected playlist requires review",),
+    )
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    loaded = SubtitleApplicationService(read_bytes=lambda path: ASS).load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    subtitles = replace(
+        loaded,
+        issues=(
+            ApplicationIssue(
+                ApplicationSeverity.WARNING,
+                "subtitle_review",
+                "subtitle requires review",
+                str(subtitle_path),
+            ),
+        ),
+    )
+
+    prepared = MergeApplicationService().prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("output", path=tmp_path / "output.ass"),),
+        )
+    )
+
+    assert prepared.ready is True
+    assert {issue.code for issue in prepared.issues} >= {
+        "playlist_warning",
+        "subtitle_review",
+    }
+
+
+@pytest.mark.parametrize(
+    ("dry_run", "accept_warnings", "succeeded"),
+    ((False, False, False), (True, False, True), (False, True, True)),
+)
+def test_execute_requires_explicit_warning_acceptance_before_writing(
+    tmp_path: Path,
+    dry_run: bool,
+    accept_warnings: bool,
+    succeeded: bool,
+) -> None:
+    layout = _layout(tmp_path)
+    playlist = _playlist(layout)
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    subtitles = SubtitleApplicationService(read_bytes=lambda path: ASS).load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    destination = tmp_path / "output.ass"
+    destination.write_text("existing", encoding="utf-8")
+    service = MergeApplicationService()
+    prepared = service.prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (
+                FullPathOutputTarget(
+                    "output",
+                    path=destination,
+                    collision_policy=CollisionPolicy.OVERWRITE,
+                ),
+            ),
+        )
+    )
+
+    result = service.execute(
+        ExecuteMergeRequest(
+            prepared,
+            dry_run=dry_run,
+            accept_warnings=accept_warnings,
+        )
+    )
+
+    assert prepared.ready is True
+    assert "output_destination_overwrite" in {
+        issue.code for issue in prepared.issues
+    }
+    assert result.succeeded is succeeded
+    if dry_run or not accept_warnings:
+        assert destination.read_text(encoding="utf-8") == "existing"
+    else:
+        assert destination.read_text(encoding="utf-8-sig") != "existing"
+    if not dry_run and not accept_warnings:
+        assert {issue.code for issue in result.issues} == {"warnings_not_accepted"}
+
+
 def test_low_confidence_or_invalid_output_blocks_execution(tmp_path: Path) -> None:
     layout = _layout(tmp_path)
     playlist = _playlist(layout)
@@ -229,7 +326,13 @@ def test_sup_uses_shared_prepare_dry_run_and_atomic_write_flow(tmp_path: Path) -
     assert dry_run.succeeded is True
     assert not destination.exists()
 
-    written = service.execute(ExecuteMergeRequest(prepared))
+    blocked = service.execute(ExecuteMergeRequest(prepared))
+
+    assert blocked.succeeded is False
+    assert {issue.code for issue in blocked.issues} == {"warnings_not_accepted"}
+    assert not destination.exists()
+
+    written = service.execute(ExecuteMergeRequest(prepared, accept_warnings=True))
 
     assert written.succeeded is True
     assert destination.read_bytes() == SUP

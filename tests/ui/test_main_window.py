@@ -10,6 +10,7 @@ from pytestqt.qtbot import QtBot
 from bdsubmerge.application import (
     ApplicationIssue,
     ApplicationSeverity,
+    ExecuteMergeRequest,
     ExecuteMergeResult,
     LoadSubtitlesRequest,
     LoadSubtitlesResult,
@@ -324,6 +325,7 @@ def test_warning_only_preflight_requires_explicit_generation_confirmation(
     )
     started: list[object] = []
     reviewed: list[tuple[ApplicationIssue, ...]] = []
+    requests: list[ExecuteMergeRequest] = []
     window.prepared = prepared
     window.mapping_dirty = False
 
@@ -331,13 +333,24 @@ def test_warning_only_preflight_requires_explicit_generation_confirmation(
         reviewed.append(warnings)
         return confirmed
 
+    def execute(request: ExecuteMergeRequest) -> object:
+        requests.append(request)
+        return object()
+
+    def start(operation: Callable[[], object], *_args: object, **_kwargs: object) -> None:
+        started.append(operation())
+
     monkeypatch.setattr(window, "_confirm_preflight_warnings", confirm)
-    monkeypatch.setattr(window, "_start_task", lambda *args, **kwargs: started.append(args))
+    monkeypatch.setattr(window.merge_service, "execute", execute)
+    monkeypatch.setattr(window, "_start_task", start)
 
     window.start_generate()
 
     assert reviewed == [prepared.issues]
     assert bool(started) is confirmed
+    assert bool(requests) is confirmed
+    if requests:
+        assert requests[0].accept_warnings is True
 
 
 def test_info_only_preflight_generates_without_confirmation(
@@ -565,7 +578,9 @@ def test_loading_subtitles_refreshes_output_format_summary(
 
 
 def test_ac08_low_confidence_is_visible_and_requires_confirmation(
-    qtbot: QtBot, tmp_path: Path
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     window = MainWindow(settings=_settings(tmp_path))
     qtbot.addWidget(window)
@@ -593,9 +608,16 @@ def test_ac08_low_confidence_is_visible_and_requires_confirmation(
     blocked = window.merge_service.prepare(blocked_request)
     window._preflight_finished(blocked)
 
-    assert blocked.ready is False
+    assert blocked.ready is True
     assert "low_mapping_confidence" in window.preflight_summary.toPlainText()
-    assert window.generate_button.isEnabled() is False
+    assert window.generate_button.isEnabled() is True
+    started: list[object] = []
+    monkeypatch.setattr(window, "_confirm_preflight_warnings", lambda _warnings: False)
+    monkeypatch.setattr(window, "_start_task", lambda *args, **kwargs: started.append(args))
+
+    window.start_generate()
+
+    assert started == []
 
     window.accept_low_confidence.setChecked(True)
     accepted_request = window._prepare_request()
@@ -604,6 +626,7 @@ def test_ac08_low_confidence_is_visible_and_requires_confirmation(
     window._preflight_finished(accepted)
 
     assert accepted.ready is True
+    assert "low_mapping_confidence" not in {issue.code for issue in accepted.issues}
     assert window.generate_button.isEnabled() is True
 
 

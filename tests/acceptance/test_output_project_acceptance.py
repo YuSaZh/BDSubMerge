@@ -6,6 +6,7 @@ from typing import cast
 import pytest
 
 from bdsubmerge.application import (
+    ApplicationSeverity,
     BdmvApplicationService,
     ExecuteMergeRequest,
     LoadSubtitlesRequest,
@@ -370,6 +371,14 @@ def test_ac06_project_save_load_restore_is_deterministic_for_unchanged_inputs(
                 accept_low_confidence=True,
             )
         )
+        if reproduced:
+            renamed = tuple(
+                issue
+                for issue in prepared.issues
+                if issue.code == "output_destination_renamed"
+            )
+            assert len(renamed) == 1
+            assert renamed[0].severity is ApplicationSeverity.INFO
         executed = MergeApplicationService().execute(ExecuteMergeRequest(prepared))
 
         assert prepared.mapping == authored.mapping

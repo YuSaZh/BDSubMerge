@@ -77,12 +77,15 @@ Before writing, BDSubMerge verifies source fingerprints, playlist timeline ident
 completeness/order, output extensions, directories, collisions, duplicate targets, source/output
 overlap, and JRiver naming. Results are errors, warnings, or information.
 
-An error blocks all output. Multi-target preflight completes before staging any file. Output
-then stages all targets, validates them, and commits or rolls back the transaction.
+An error blocks all output. A warning remains visible in validation and dry-run results, but a
+real write requires explicit confirmation in the GUI or `--accept-warnings` in the CLI.
+Information does not require confirmation. Multi-target preflight completes before staging any
+file. Output then stages all targets, validates them, and commits or rolls back the transaction.
 
 ```powershell
 bdsubmerge validate "D:\Projects\Title.bdsm.json" --json --verbose
 bdsubmerge merge "D:\Projects\Title.bdsm.json" --dry-run --json
+bdsubmerge merge "D:\Projects\Title.bdsm.json" --accept-warnings --json
 ```
 
 `validate` rebuilds the planned merge and output preflight. `merge --dry-run` performs the same
@@ -135,7 +138,7 @@ bdsubmerge scan <path> [--max-depth N] [--subtitle-duration-90k TICKS] [--subtit
 bdsubmerge inspect <mpls> [--max-depth N]
 bdsubmerge plan <project.bdsm.json>
 bdsubmerge validate <project.bdsm.json>
-bdsubmerge merge <project.bdsm.json> [--dry-run]
+bdsubmerge merge <project.bdsm.json> [--dry-run] [--accept-warnings]
   [--report <path>] [--report-format json|text]
   [--report-collision abort|overwrite|backup|auto_rename]
 ```
