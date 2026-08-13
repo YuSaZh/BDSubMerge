@@ -40,6 +40,7 @@
 - 当前实现让 prepare 保留播放列表、字幕、映射、合并和输出 warning，`execute()` 在真实写入前统一要求 `accept_warnings=True`；dry-run 和 validate 保持无写入预览语义。
 - GUI 仅在确认后传入接受标志；CLI 新增显式 `--accept-warnings`，并同步双语用户指南。已补共享服务、AC08、GUI 和 CLI 参数穿透的远程测试代码。
 - 提交前静态审查已完成：全部执行调用点按真实 warning 来源核对，CLI 重复诊断已保序去重；14 个修改文件通过 `git diff --check`，所有修改 Python 文件均不超过 100 字符，等待精确提交的 Actions 验证。
+- 提交 `cd64bcf` 已使用本机 SSH 凭据推送；run `31684849411` 的源码包通过，Ubuntu/Windows 均在 Ruff 报同一处未使用的 `dataclasses.replace` 后停止。已按 annotation 删除该导入，等待下一精确提交重新执行完整门禁。
 
 ### M0-M4 基线
 - **状态：** complete
@@ -163,6 +164,8 @@
 | 详情批次远程 Ruff 续报 | run `31678761361` 显示首轮 annotations 未列全的 9 个同类诊断 | 静态扫描本批全部 Python 文件的全角括号、冒号和逗号，一次性补齐逐行豁免 |
 | CI 流式监控超时 | `gh run watch` 的本地命令上限设为 1 秒，监控进程先于远程 run 完成被终止 | 改用 `gh run view` 短查询轮询精确 run ID，不将本地监控超时视为 CI 失败 |
 | PowerShell `rg` 组合正则引号 | 双引号命令中的转义破坏字符组，导致正则未闭合且整组只读查询停止 | 后续拆分查询或使用 PowerShell 单引号保护正则，不重复失败命令 |
+| `gh api -R` 版本兼容 | 当前本机 `gh api` 不支持仓库短参数，命令在请求前退出 | 改用包含 `repos/YuSaZh/BDSubMerge` 的完整 endpoint，annotations 读取成功 |
+| warning 门禁远程 Ruff | run `31684849411` 双平台同报 AC-08 改写后遗留的未使用 `dataclasses.replace` | 删除唯一未使用导入，按新 SHA 重新触发完整 CI |
 
 ### UI 截图发布证据
 - **状态：** complete
