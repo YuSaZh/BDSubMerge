@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QTableWidget,
@@ -56,6 +57,8 @@ from bdsubmerge.application import (
     BdmvApplicationService,
     ExecuteMergeRequest,
     ExecuteMergeResult,
+    ImportSubtitlesRequest,
+    ImportSubtitlesResult,
     LoadSubtitlesRequest,
     LoadSubtitlesResult,
     MergeApplicationService,
@@ -69,9 +72,7 @@ from bdsubmerge.application import (
     ScanResult,
     SubtitleApplicationService,
     SubtitleInput,
-    append_discovered_subtitle_paths,
     build_playlist_boundaries,
-    discover_subtitle_paths,
     natural_path_key,
     select_playlists,
 )
@@ -208,6 +209,8 @@ class MainWindow(QMainWindow):
         self.restored_mapping_snapshots: tuple[MappingSnapshot, ...] = ()
         self.pending_project: RestoredProject | None = None
         self.pending_restore_after_scan = False
+        self.pending_bdmv_scan_path: Path | None = None
+        self.pending_import_bdmv_fallback = False
         self.subtitle_paths: list[Path] = []
         self.locked_subtitles: set[Path] = set()
         self.subtitle_offsets_90k: dict[Path, int] = {}
@@ -488,6 +491,12 @@ class MainWindow(QMainWindow):
 
         task_row = QHBoxLayout()
         self.task_status = QLabel()
+        self.task_detail = QLabel()
+        self.task_detail.setMinimumWidth(0)
+        self.task_detail.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
@@ -497,6 +506,7 @@ class MainWindow(QMainWindow):
         self.details_button = QPushButton()
         self.details_button.setCheckable(True)
         task_row.addWidget(self.task_status)
+        task_row.addWidget(self.task_detail, 1)
         task_row.addWidget(self.progress, 1)
         task_row.addWidget(self.cancel_button)
         task_row.addWidget(self.details_button)
@@ -796,6 +806,31 @@ class MainWindow(QMainWindow):
 
     def _scan_finished(self, value: object) -> None:
         result = cast(ScanResult, value)
+        previous_bdmv_path = (
+            self.scan_result.layout.bdmv_path
+            if self.scan_result is not None and self.scan_result.layout is not None
+            else None
+        )
+        if not result.ready:
+            self.task_failed = True
+            self.task_status.setText(self.translations.text("task.failed"))
+        if self.pending_project is not None and not result.ready:
+            self._record_issues(result.issues)
+            self.path_edit.setText(self.pending_project_previous_bdmv)
+            self._discard_pending_project_restore()
+            self.statusBar().showMessage(
+                self.translations.text("status.project_incomplete"), 8000
+            )
+            self._update_actions()
+            return
+        if self.pending_project is not None:
+            self.project_path = None
+        elif (
+            self.project_path is not None
+            and result.layout is not None
+            and previous_bdmv_path != result.layout.bdmv_path
+        ):
+            self.project_path = None
         self._clear_playlist_mapping()
         self.scan_result = result
         self.selected_playlists = ()
@@ -1397,8 +1432,17 @@ class MainWindow(QMainWindow):
             )
 
     def _project_subtitles_finished(self, value: object) -> None:
-        self._subtitles_finished(value)
+        result = cast(LoadSubtitlesResult, value)
+        self._subtitles_finished(result)
         if self.pending_project is None:
+            return
+        if not result.ready:
+            self.task_failed = True
+            self.task_status.setText(self.translations.text("task.failed"))
+            self._discard_pending_project_restore()
+            self.statusBar().showMessage(
+                self.translations.text("status.project_incomplete"), 8000
+            )
             return
         state = self.pending_project.state
         saved_subtitles_by_path = {item.path: item for item in state.subtitles}
@@ -1564,20 +1608,50 @@ class MainWindow(QMainWindow):
         if selected:
             self.add_subtitle_paths((Path(selected),))
 
-    def add_subtitle_paths(self, paths: tuple[Path, ...]) -> None:
+    def add_subtitle_paths(
+        self,
+        paths: tuple[Path, ...],
+        *,
+        scan_bdmv_if_empty: bool = False,
+    ) -> None:
         if self.active_task is not None:
             return
         self._sync_subtitle_order()
-        updated_paths = append_discovered_subtitle_paths(self.subtitle_paths, paths)
-        if updated_paths == tuple(self.subtitle_paths):
-            return
-        self.subtitle_paths = list(updated_paths)
-        request = LoadSubtitlesRequest(tuple(SubtitleInput(path) for path in self.subtitle_paths))
+        request = ImportSubtitlesRequest(tuple(self.subtitle_paths), paths)
+        self.pending_import_bdmv_fallback = scan_bdmv_if_empty
         self._start_task(
-            lambda: self.subtitle_service.load_ordered(request),
+            lambda: self.subtitle_service.discover_and_load(request),
             self.translations.text("task.loading"),
-            self._subtitles_finished,
+            self._subtitle_import_finished,
+            kind="subtitle_import",
         )
+
+    def _subtitle_import_finished(self, value: object) -> None:
+        result = cast(ImportSubtitlesResult, value)
+        self._record_issues(result.issues)
+        if result.changed and result.subtitles is not None:
+            if not result.subtitles.ready:
+                self.task_failed = True
+                self.task_status.setText(self.translations.text("task.failed"))
+                self._record_issues(result.subtitles.issues)
+                self.pending_import_bdmv_fallback = False
+                return
+            self.pending_import_bdmv_fallback = False
+            self.subtitle_paths = list(result.paths)
+            self._subtitles_finished(result.subtitles)
+            return
+        if (
+            self.pending_import_bdmv_fallback
+            and not result.found_subtitles
+            and result.scan_candidate is not None
+            and not result.issues
+        ):
+            self.pending_bdmv_scan_path = result.scan_candidate
+        elif self.pending_import_bdmv_fallback and not result.found_subtitles:
+            self.statusBar().showMessage(
+                self.translations.text("dialog.unsupported_drop"), 6000
+            )
+        self.pending_import_bdmv_fallback = False
 
     def _subtitles_finished(self, value: object) -> None:
         result = cast(LoadSubtitlesResult, value)
@@ -2671,6 +2745,8 @@ class MainWindow(QMainWindow):
         self.task_failed = False
         self.task_cancelled = False
         self.task_status.setText(status)
+        self.task_detail.clear()
+        self.task_detail.setToolTip("")
         self.progress.setValue(0)
         self.cancel_button.setEnabled(True)
         self._update_actions()
@@ -2678,13 +2754,20 @@ class MainWindow(QMainWindow):
 
     @Slot(int, str)
     def _task_progress(self, value: int, detail: str) -> None:
-        del detail
         self.progress.setValue(value)
         self.progress.setFormat("%p%")
+        if detail == "complete":
+            self.task_detail.clear()
+            self.task_detail.setToolTip("")
+        elif detail != "started":
+            self.task_detail.setText(Path(detail).name or detail)
+            self.task_detail.setToolTip(detail)
 
     @Slot(str, str)
     def _task_failed(self, message: str, details: str) -> None:
         self.task_failed = True
+        self.pending_import_bdmv_fallback = False
+        self.pending_bdmv_scan_path = None
         self.task_status.setText(self.translations.text("task.failed"))
         self._clear_failed_project_restore()
         self._record_error(f"{message}\n{details}")
@@ -2692,6 +2775,8 @@ class MainWindow(QMainWindow):
     @Slot()
     def _task_cancelled(self) -> None:
         self.task_cancelled = True
+        self.pending_import_bdmv_fallback = False
+        self.pending_bdmv_scan_path = None
         self._clear_failed_project_restore()
         self.task_status.setText(self.translations.text("task.cancelled"))
 
@@ -2730,6 +2815,11 @@ class MainWindow(QMainWindow):
         if task_succeeded and self.pending_restore_after_scan:
             self.pending_restore_after_scan = False
             self._continue_project_restore()
+        elif task_succeeded and self.pending_bdmv_scan_path is not None:
+            bdmv_path = self.pending_bdmv_scan_path
+            self.pending_bdmv_scan_path = None
+            self.path_edit.setText(str(bdmv_path))
+            self.start_scan()
         elif self.pending_preflight and (
             task_succeeded or finished_kind == "preflight"
         ):
@@ -3008,14 +3098,8 @@ class MainWindow(QMainWindow):
         paths = tuple(
             Path(url.toLocalFile()) for url in event.mimeData().urls() if url.isLocalFile()
         )
-        subtitles = discover_subtitle_paths(paths)
-        directories = tuple(path for path in paths if path.is_dir())
-        if subtitles:
-            self.add_subtitle_paths(subtitles)
-            event.acceptProposedAction()
-        elif directories:
-            self.path_edit.setText(str(directories[0]))
-            self.start_scan()
+        if paths:
+            self.add_subtitle_paths(paths, scan_bdmv_if_empty=True)
             event.acceptProposedAction()
         else:
             self.statusBar().showMessage(

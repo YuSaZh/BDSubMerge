@@ -2,11 +2,13 @@ from pathlib import Path
 
 import pytest
 
+from bdsubmerge.cancellation import progress_scope
 from bdsubmerge.output import (
     AtomicWriteError,
     CollisionPolicy,
     FullPathOutputTarget,
     OutputContext,
+    PreflightResult,
     ResolvedOutput,
     preflight_outputs,
     write_outputs_atomically,
@@ -26,6 +28,26 @@ def test_atomic_writer_commits_all_staged_outputs(tmp_path: Path) -> None:
     assert (tmp_path / "first.ass").read_text(encoding="utf-8-sig") == "one"
     assert (tmp_path / "second.ass").read_bytes() == b"two"
     assert not tuple(tmp_path.glob("*.tmp"))
+
+
+def test_atomic_writer_reports_each_output_path(tmp_path: Path) -> None:
+    destination = tmp_path / "episode.ass"
+    target = FullPathOutputTarget("episode", path=destination)
+    preflight = preflight_outputs((target,), OutputContext(subtitle_format="ass"))
+    progress: list[tuple[int, str]] = []
+
+    with progress_scope(lambda value, detail: progress.append((value, detail))):
+        write_outputs_atomically(preflight, {"episode": "subtitle"})
+
+    assert any(detail == str(destination) for _, detail in progress)
+    assert progress[-1] == (95, str(destination))
+
+
+def test_atomic_writer_accepts_an_empty_ready_transaction() -> None:
+    receipt = write_outputs_atomically(PreflightResult((), ()), {})
+
+    assert receipt.paths == ()
+    assert receipt.backups == ()
 
 
 def test_backup_policy_preserves_previous_destination(tmp_path: Path) -> None:

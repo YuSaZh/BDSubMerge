@@ -1,5 +1,6 @@
 import pytest
 
+from bdsubmerge.cancellation import progress_scope
 from bdsubmerge.merge.engine import MergeConflictError, merge_ass
 from bdsubmerge.merge.plan import MergeOptions, MergePlan, MergeSource
 from bdsubmerge.subtitles.ass_document import AssDocument, parse_ass
@@ -37,6 +38,18 @@ def test_ass_merge_keeps_source_order_shifts_comments_and_renames_styles() -> No
     assert result.document.events[1].value("Text") == r"{\rDefault__E02}line"
     assert result.report.output_event_count == 3
     assert result.report.style_renames[0].new_name == "Default__E02"
+
+
+def test_ass_merge_reports_current_source_detail() -> None:
+    source_path = "/media/Subtitles/E01.ass"
+    progress: list[tuple[int, str]] = []
+
+    with progress_scope(lambda value, detail: progress.append((value, detail))):
+        merge_ass(
+            MergePlan((MergeSource("E01", _ass(color="white"), 0, source_path),))
+        )
+
+    assert any(detail == source_path for _, detail in progress)
 
 
 def test_script_resolution_conflict_requires_explicit_acceptance() -> None:

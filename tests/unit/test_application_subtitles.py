@@ -1,10 +1,12 @@
 from pathlib import Path
 
 from bdsubmerge.application import (
+    ImportSubtitlesRequest,
     LoadSubtitlesRequest,
     SubtitleApplicationService,
     SubtitleInput,
 )
+from bdsubmerge.cancellation import progress_scope
 from bdsubmerge.subtitles import SubtitleFormat
 
 ASS = (
@@ -76,3 +78,59 @@ def test_sup_is_loaded_with_estimated_duration_warning() -> None:
     assert result.assets[0].analysis.effective_end_ticks == 90_000
     assert result.assets[0].analysis.duration_estimated is True
     assert "sup_duration_estimated" in {issue.code for issue in result.issues}
+
+
+def test_discover_and_load_preserves_existing_order_and_reports_current_path(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "Subtitles"
+    root.mkdir()
+    episode_1 = root / "E1.ass"
+    episode_2 = root / "E2.ass"
+    episode_10 = root / "E10.ass"
+    for path in (episode_1, episode_2, episode_10):
+        path.write_bytes(ASS)
+    progress: list[tuple[int, str]] = []
+    service = SubtitleApplicationService()
+
+    with progress_scope(lambda value, detail: progress.append((value, detail))):
+        result = service.discover_and_load(
+            ImportSubtitlesRequest((episode_10, episode_1), (root,))
+        )
+
+    assert result.changed is True
+    assert result.paths == (episode_10, episode_1, episode_2)
+    assert result.subtitles is not None
+    assert tuple(asset.path for asset in result.subtitles.assets) == result.paths
+    assert result.input_directories == (root,)
+    assert any(detail == str(episode_2) for _, detail in progress)
+
+
+def test_discover_and_load_does_not_reload_duplicate_inputs(tmp_path: Path) -> None:
+    root = tmp_path / "Subtitles"
+    root.mkdir()
+    episode = root / "E1.ass"
+    episode.write_bytes(ASS)
+    service = SubtitleApplicationService()
+
+    result = service.discover_and_load(
+        ImportSubtitlesRequest((episode,), (root,))
+    )
+
+    assert result.changed is False
+    assert result.found_subtitles is True
+    assert result.subtitles is None
+
+
+def test_discover_and_load_returns_bdmv_file_as_scan_candidate(tmp_path: Path) -> None:
+    index_bdmv = tmp_path / "BDMV" / "index.bdmv"
+    index_bdmv.parent.mkdir()
+    index_bdmv.write_bytes(b"index")
+
+    result = SubtitleApplicationService().discover_and_load(
+        ImportSubtitlesRequest((), (index_bdmv,))
+    )
+
+    assert result.changed is False
+    assert result.found_subtitles is False
+    assert result.scan_candidate == index_bdmv

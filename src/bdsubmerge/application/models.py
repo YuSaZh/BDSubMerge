@@ -109,6 +109,23 @@ class LoadSubtitlesResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ImportSubtitlesRequest:
+    existing_paths: tuple[Path, ...]
+    inputs: tuple[Path, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ImportSubtitlesResult:
+    paths: tuple[Path, ...]
+    subtitles: LoadSubtitlesResult | None
+    changed: bool
+    found_subtitles: bool
+    input_directories: tuple[Path, ...] = ()
+    issues: tuple[ApplicationIssue, ...] = ()
+    scan_candidate: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PrepareMergeRequest:
     layout: BdmvLayout
     playlist: PlaylistInfo

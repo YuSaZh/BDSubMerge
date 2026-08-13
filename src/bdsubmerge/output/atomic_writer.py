@@ -12,6 +12,7 @@ from bdsubmerge.cancellation import (
     CancellationCheck,
     OperationCancelledError,
     raise_if_cancelled,
+    report_progress,
 )
 
 from .models import (
@@ -56,16 +57,25 @@ def write_outputs_atomically(
     rollback: dict[str, Path] = {}
     committed: list[ResolvedOutput] = []
     backups: list[Path] = []
+    output_count = len(outputs)
     try:
-        for output in outputs:
+        for index, output in enumerate(outputs):
             raise_if_cancelled(cancellation_check)
+            report_progress(
+                10 + (index * 45 // output_count),
+                str(output.path),
+            )
             staged[output.target_id] = _stage(
                 output,
                 payloads[output.target_id],
                 cancellation_check,
             )
-        for output in outputs:
+        for index, output in enumerate(outputs):
             raise_if_cancelled(cancellation_check)
+            report_progress(
+                60 + (index * 15 // output_count),
+                str(output.path),
+            )
             stage_path = staged[output.target_id]
             if validator is not None:
                 validator(stage_path, output)
@@ -102,8 +112,12 @@ def write_outputs_atomically(
                 rollback[output.target_id] = rollback_path
             raise_if_cancelled(cancellation_check)
 
-        for output in outputs:
+        for index, output in enumerate(outputs):
             raise_if_cancelled(cancellation_check)
+            report_progress(
+                80 + (index * 15 // output_count),
+                str(output.path),
+            )
             staged[output.target_id].replace(output.path)
             committed.append(output)
             _sync_directory(output.path.parent)
@@ -115,6 +129,8 @@ def write_outputs_atomically(
                 and output.collision_policy is CollisionPolicy.OVERWRITE
             ):
                 _safe_unlink(saved_original)
+        if outputs:
+            report_progress(95, str(outputs[-1].path))
         return WriteReceipt(
             tuple(output.path for output in outputs),
             tuple(backups),

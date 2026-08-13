@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QItemSelectionModel, QSettings, Qt
-from PySide6.QtWidgets import QComboBox
+from PySide6.QtWidgets import QComboBox, QFileDialog
 from pytestqt.qtbot import QtBot
 
 from bdsubmerge.application import (
@@ -413,6 +413,168 @@ def test_open_project_source_checks_are_shown_without_modal_dialog(
     assert "missing.ass" in window.error_panel.toPlainText()
 
 
+def test_failed_project_scan_preserves_previous_project_association(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    previous_project = tmp_path / "previous.bdsm.json"
+    next_project = tmp_path / "next.bdsm.json"
+    previous_bdmv = str(tmp_path / "Previous" / "BDMV")
+    state = ProjectState(
+        tmp_path / "Next" / "BDMV",
+        tmp_path / "Next" / "BDMV" / "index.bdmv",
+        tmp_path / "Next" / "BDMV" / "PLAYLIST" / "00001.mpls",
+        "00001",
+        90_000,
+        (),
+        (),
+        (),
+        (),
+        (),
+    )
+    window.project_path = previous_project
+    window.pending_project = RestoredProject(state, ())
+    window.pending_project_path = next_project
+    window.pending_project_previous_bdmv = previous_bdmv
+    window.path_edit.setText(str(state.bdmv_path))
+    failed = ScanResult(
+        None,
+        (),
+        (ApplicationIssue(ApplicationSeverity.ERROR, "scan_failed", "boom"),),
+    )
+
+    window._scan_finished(failed)
+
+    assert window.project_path == previous_project
+    assert window.pending_project is None
+    assert window.pending_project_path is None
+    assert window.path_edit.text() == previous_bdmv
+    assert window.task_status.text() == window.translations.text("task.failed")
+
+
+def test_successful_project_scan_clears_old_association_until_restore_completes(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    scan = _scan_result(tmp_path)
+    assert scan.layout is not None
+    previous_project = tmp_path / "previous.bdsm.json"
+    next_project = tmp_path / "next.bdsm.json"
+    state = ProjectState(
+        scan.layout.bdmv_path,
+        scan.layout.index_bdmv_path,
+        scan.playlists[0].path,
+        scan.playlists[0].stem,
+        int(scan.playlists[0].duration_90k),
+        (),
+        (),
+        (),
+        (),
+        (),
+    )
+    window.project_path = previous_project
+    window.pending_project = RestoredProject(state, ())
+    window.pending_project_path = next_project
+
+    window._scan_finished(scan)
+
+    assert window.project_path is None
+    assert window.pending_project_path == next_project
+    assert window.pending_restore_after_scan is True
+
+
+def test_manual_scan_of_another_bdmv_clears_project_association(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    previous_scan = _scan_result(tmp_path / "previous")
+    next_scan = _scan_result(tmp_path / "next")
+    window._scan_finished(previous_scan)
+    window.project_path = tmp_path / "previous.bdsm.json"
+
+    window._scan_finished(next_scan)
+
+    assert window.project_path is None
+
+
+def test_failed_project_subtitle_restore_keeps_new_workspace_unassociated(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    scan = _scan_result(tmp_path)
+    window._scan_finished(scan)
+    subtitle = tmp_path / "broken.ass"
+    state = ProjectState(
+        scan.layout.bdmv_path,
+        scan.layout.index_bdmv_path,
+        scan.playlists[0].path,
+        scan.playlists[0].stem,
+        int(scan.playlists[0].duration_90k),
+        (),
+        (SubtitleState("episode-1", subtitle, "ass", "utf-8", 0),),
+        (),
+        (),
+        (),
+    )
+    window.project_path = None
+    window.pending_project = RestoredProject(state, ())
+    window.pending_project_path = tmp_path / "next.bdsm.json"
+    failed = LoadSubtitlesResult(
+        (),
+        None,
+        (ApplicationIssue(ApplicationSeverity.ERROR, "subtitle_load_failed", "boom"),),
+    )
+
+    window._project_subtitles_finished(failed)
+
+    assert window.project_path is None
+    assert window.pending_project is None
+    assert window.pending_project_path is None
+
+    subtitle.write_text(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n",
+        encoding="utf-8",
+    )
+    document = parse_ass(subtitle.read_text(encoding="utf-8"))
+    asset = SubtitleAsset(
+        subtitle,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+        "utf-8",
+    )
+    save_as = tmp_path / "recovered.bdsm.json"
+    saved_paths: list[Path] = []
+    window.subtitle_result = LoadSubtitlesResult((asset,), SubtitleFormat.ASS)
+    window.subtitle_paths = [subtitle]
+    window.selected_playlist = scan.playlists[0]
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        lambda *args: (str(save_as), "BDSubMerge (*.bdsm.json)"),
+    )
+    monkeypatch.setattr(
+        "bdsubmerge.ui.main_window.capture_and_save",
+        lambda state, path: saved_paths.append(path),
+    )
+
+    window.save_project()
+
+    assert saved_paths == [save_as]
+    assert window.project_path == save_as
+
+
 def test_playlist_table_supports_multiple_selection(qtbot: QtBot, tmp_path: Path) -> None:
     window = MainWindow(settings=_settings(tmp_path))
     qtbot.addWidget(window)
@@ -663,6 +825,8 @@ def test_project_mapping_is_restored_by_subtitle_id(
     )
     window.subtitle_paths = [subtitle]
     window.pending_project = RestoredProject(state, ())
+    project_path = tmp_path / "restored.bdsm.json"
+    window.pending_project_path = project_path
 
     window._project_subtitles_finished(LoadSubtitlesResult((asset,), SubtitleFormat.ASS))
 
@@ -679,6 +843,9 @@ def test_project_mapping_is_restored_by_subtitle_id(
     assert window.mapping_table.item(0, 7).text() == "10 ms"
     assert window.subtitle_offsets_90k[subtitle] == 901
     assert window._mapping_locks()[0].manual_offset_90k == 901
+    assert window.project_path == project_path
+    assert window.pending_project is None
+    assert window.pending_project_path is None
 
 
 def test_adding_directory_preserves_manual_order_and_appends_naturally(

@@ -13,6 +13,7 @@ from bdsubmerge.cancellation import (
     OperationCancelledError,
     cancellation_scope,
     raise_if_cancelled,
+    report_progress,
 )
 from bdsubmerge.domain.models import BdmvLayout, PgStreamInfo, PlaylistInfo
 from bdsubmerge.domain.timebase import MediaTick90k
@@ -261,8 +262,10 @@ def scan_playlists(
     except (OSError, PermissionError):
         return ()
     results: list[PlaylistInfo] = []
-    for path in paths:
+    path_count = len(paths)
+    for index, path in enumerate(paths):
         raise_if_cancelled(cancellation_check)
+        report_progress(15 + (index * 70 // path_count), str(path))
         try:
             with cancellation_scope(cancellation_check):
                 results.append(parser.parse(path, layout))

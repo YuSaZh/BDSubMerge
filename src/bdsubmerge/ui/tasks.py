@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 from bdsubmerge.cancellation import (
     OperationCancelledError,
     cancellation_scope,
+    progress_scope,
     raise_if_cancelled,
 )
 
@@ -53,8 +54,14 @@ class ServiceTask[ResultT](QRunnable):
 
     @Slot()
     def run(self) -> None:
+        def emit_progress(value: int, detail: str) -> None:
+            self.signals.progress.emit(value, detail)
+
         try:
-            with cancellation_scope(self.token.is_cancelled):
+            with (
+                cancellation_scope(self.token.is_cancelled),
+                progress_scope(emit_progress),
+            ):
                 raise_if_cancelled()
                 self.signals.progress.emit(5, "started")
                 result = self.operation()

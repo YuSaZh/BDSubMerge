@@ -14,7 +14,11 @@ from bdsubmerge.bdmv import (
     resolve_bdmv_layout,
     scan_playlists,
 )
-from bdsubmerge.cancellation import CancellationCheck, raise_if_cancelled
+from bdsubmerge.cancellation import (
+    CancellationCheck,
+    raise_if_cancelled,
+    report_progress,
+)
 from bdsubmerge.domain.models import PlaylistInfo
 from bdsubmerge.domain.timebase import MediaTick90k
 from bdsubmerge.mapping import (
@@ -69,6 +73,8 @@ from .models import (
     ApplicationSeverity,
     ExecuteMergeRequest,
     ExecuteMergeResult,
+    ImportSubtitlesRequest,
+    ImportSubtitlesResult,
     InspectRequest,
     InspectResult,
     LoadSubtitlesRequest,
@@ -91,6 +97,10 @@ from .reporting import (
     ReportStyleRename,
     preflight_merge_report,
 )
+from .subtitle_discovery import (
+    append_discovered_subtitle_paths,
+    discover_subtitle_paths,
+)
 
 
 class BdmvApplicationService:
@@ -104,6 +114,7 @@ class BdmvApplicationService:
         cancellation_check: CancellationCheck | None = None,
     ) -> ScanResult:
         raise_if_cancelled(cancellation_check)
+        report_progress(10, str(request.selected_path))
         record_runtime_event(
             "bdmv_scan_started",
             selected_path=str(request.selected_path),
@@ -125,6 +136,7 @@ class BdmvApplicationService:
             cancellation_check=cancellation_check,
         )
         raise_if_cancelled(cancellation_check)
+        report_progress(90, str(layout.index_bdmv_path))
         ranked = rank_playlists(
             playlists,
             RankingContext(
@@ -205,8 +217,10 @@ class SubtitleApplicationService:
             return LoadSubtitlesResult((), None, (_error("no_subtitles", "no subtitles supplied"),))
         assets: list[SubtitleAsset] = []
         issues: list[ApplicationIssue] = []
-        for source in request.sources:
+        source_count = len(request.sources)
+        for index, source in enumerate(request.sources):
             raise_if_cancelled(cancellation_check)
+            report_progress(25 + (index * 70 // source_count), str(source.path))
             if source.path.suffix.casefold() == ".sup":
                 try:
                     data = self._read_bytes(source.path)
@@ -342,7 +356,73 @@ class SubtitleApplicationService:
             ),
             issue_codes=tuple(issue.code for issue in issues),
         )
+        report_progress(95, str(request.sources[-1].path))
         return LoadSubtitlesResult(tuple(assets), subtitle_format, tuple(issues))
+
+    def discover_and_load(
+        self,
+        request: ImportSubtitlesRequest,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> ImportSubtitlesResult:
+        """Discover directory inputs and load the resulting ordered subtitle set."""
+
+        discovery_issues: list[ApplicationIssue] = []
+        input_directories: list[Path] = []
+
+        def record_discovery_error(path: Path, error: OSError) -> None:
+            discovery_issues.append(
+                _warning("subtitle_discovery_failed", str(error), str(path))
+            )
+
+        def report_current_path(path: Path) -> None:
+            report_progress(10, str(path))
+
+        discovered = discover_subtitle_paths(
+            request.inputs,
+            cancellation_check=cancellation_check,
+            progress=report_current_path,
+            on_error=record_discovery_error,
+            on_input_directory=input_directories.append,
+        )
+        scan_candidate = next(
+            (
+                path
+                for path in request.inputs
+                if path in input_directories
+                or path.suffix.casefold() in {".bdmv", ".mpls"}
+            ),
+            None,
+        )
+        updated_paths = append_discovered_subtitle_paths(
+            request.existing_paths,
+            discovered,
+            cancellation_check=cancellation_check,
+        )
+        changed = updated_paths != request.existing_paths
+        if not changed:
+            return ImportSubtitlesResult(
+                updated_paths,
+                None,
+                False,
+                bool(discovered),
+                tuple(input_directories),
+                tuple(discovery_issues),
+                scan_candidate,
+            )
+        subtitles = self.load_ordered(
+            LoadSubtitlesRequest(tuple(SubtitleInput(path) for path in updated_paths)),
+            cancellation_check=cancellation_check,
+        )
+        return ImportSubtitlesResult(
+            updated_paths,
+            subtitles,
+            True,
+            bool(discovered),
+            tuple(input_directories),
+            tuple(discovery_issues),
+            scan_candidate,
+        )
 
 
 class MergeApplicationService:
@@ -353,6 +433,7 @@ class MergeApplicationService:
         cancellation_check: CancellationCheck | None = None,
     ) -> PreparedMerge:
         raise_if_cancelled(cancellation_check)
+        report_progress(10, str(request.playlist.path))
         record_runtime_event(
             "merge_prepare_started",
             bdmv_path=str(request.layout.bdmv_path),
@@ -432,6 +513,7 @@ class MergeApplicationService:
 
         context = request.output_context or _output_context(request)
         raise_if_cancelled(cancellation_check)
+        report_progress(25, str(request.playlist.path))
         output_preflight = preflight_outputs(
             request.output_targets,
             context,
@@ -523,6 +605,12 @@ class MergeApplicationService:
                     request.report_target.report_format
                 )
                 raise_if_cancelled(cancellation_check)
+        progress_path = (
+            output_preflight.outputs[0].path
+            if output_preflight.outputs
+            else request.playlist.path
+        )
+        report_progress(95, str(progress_path))
         record_runtime_event(
             "merge_prepared",
             playlist_path=str(request.playlist.path),
@@ -753,6 +841,7 @@ def _merge_payload(
                 asset.path.stem,
                 cast(AssDocument, asset.document),
                 int(mapped.final_offset_90k),
+                str(asset.path),
             )
             for asset, mapped in zip(
                 request.subtitles.assets, mapping.mappings, strict=True
@@ -772,6 +861,7 @@ def _merge_payload(
                 asset.path.stem,
                 cast(SrtDocument, asset.document),
                 int(mapped.final_offset_90k),
+                str(asset.path),
             )
             for asset, mapped in zip(
                 request.subtitles.assets, mapping.mappings, strict=True
@@ -794,6 +884,7 @@ def _merge_payload(
                 cast(PgsDocument, asset.document),
                 mapped.final_offset_90k,
                 asset.path.stem,
+                str(asset.path),
             )
             for asset, mapped in zip(
                 request.subtitles.assets, mapping.mappings, strict=True

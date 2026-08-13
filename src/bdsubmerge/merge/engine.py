@@ -11,6 +11,7 @@ from bdsubmerge.cancellation import (
     CancellationCheck,
     cancellation_scope,
     raise_if_cancelled,
+    report_progress,
 )
 from bdsubmerge.subtitles.ass_document import (
     AssDocument,
@@ -248,6 +249,7 @@ def _merged_attachment_section(
     header = f"[{section_name.title()}]"
     for source in sources:
         raise_if_cancelled()
+        report_progress(70, source.detail or source.label)
         section = source.document.section(section_name)
         if section is None:
             continue
@@ -397,8 +399,13 @@ def _merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
     rename_records: list[StyleRenameRecord] = []
     dropped = 0
     clipped = 0
-    for source in sources:
+    source_count = len(sources)
+    for source_index, source in enumerate(sources):
         raise_if_cancelled()
+        report_progress(
+            35 + (source_index * 30 // source_count),
+            source.detail or source.label,
+        )
         shifted_events: list[AssEvent] = []
         for event in source.document.events:
             raise_if_cancelled()
@@ -498,8 +505,13 @@ def _merge_srt(plan: MergePlan[SrtDocument]) -> SrtMergeResult:
     notices: list[MergeNotice] = []
     dropped = 0
     clipped = 0
-    for source in plan.sources:
+    source_count = len(plan.sources)
+    for source_index, source in enumerate(plan.sources):
         raise_if_cancelled()
+        report_progress(
+            35 + (source_index * 40 // source_count),
+            source.detail or source.label,
+        )
         for cue in source.document.cues:
             raise_if_cancelled()
             start = cue.start_ticks + source.offset_ticks

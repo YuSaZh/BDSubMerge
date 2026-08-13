@@ -6,7 +6,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from enum import IntEnum, StrEnum
 
-from bdsubmerge.cancellation import CancellationCheck, raise_if_cancelled
+from bdsubmerge.cancellation import (
+    CancellationCheck,
+    raise_if_cancelled,
+    report_progress,
+)
 from bdsubmerge.domain.timebase import MediaTick90k
 
 PG_MAGIC = b"PG"
@@ -91,6 +95,7 @@ class PgsSource:
     document: PgsDocument
     offset_90k: MediaTick90k = field(default_factory=lambda: MediaTick90k(0))
     label: str = ""
+    detail: str = ""
 
 
 def _validate_timestamp(value: int, *, field: str, packet_index: int) -> MediaTick90k:
@@ -282,8 +287,13 @@ def append_sup_sources(
     """Shift and append sources in caller-provided order without re-encoding."""
     packets: list[PgsPacket] = []
     warnings: list[str] = []
+    source_count = len(sources)
     for source_index, source in enumerate(sources):
         raise_if_cancelled(cancellation_check)
+        report_progress(
+            35 + (source_index * 40 // source_count),
+            source.detail or source.label or f"source {source_index}",
+        )
         shifted = shift_sup(
             source.document,
             source.offset_90k,

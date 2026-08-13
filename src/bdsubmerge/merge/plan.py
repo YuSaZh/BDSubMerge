@@ -10,6 +10,7 @@ class MergeSource[DocumentT]:
     label: str
     document: DocumentT
     offset_ticks: int
+    detail: str = ""
 
 
 @dataclass(frozen=True, slots=True)

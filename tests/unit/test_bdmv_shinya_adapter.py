@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from bdsubmerge.bdmv.shinya_adapter import ShinyaPlaylistAdapter, scan_playlists
+from bdsubmerge.cancellation import progress_scope
 from bdsubmerge.domain.models import BdmvLayout
 
 
@@ -75,3 +76,15 @@ def test_scan_isolates_a_broken_mpls(tmp_path: Path) -> None:
     assert len(results) == 2
     assert results[0].errors == ("ValueError: corrupt",)
     assert results[1].errors == ("Playlist total duration is zero",)
+
+
+def test_scan_reports_current_playlist_path(tmp_path: Path) -> None:
+    layout = _layout(tmp_path)
+    path = layout.playlist_path / "00000.mpls"
+    path.touch()
+    progress: list[tuple[int, str]] = []
+
+    with progress_scope(lambda value, detail: progress.append((value, detail))):
+        scan_playlists(layout)
+
+    assert any(detail == str(path) for _, detail in progress)

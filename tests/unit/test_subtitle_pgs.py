@@ -1,5 +1,6 @@
 import pytest
 
+from bdsubmerge.cancellation import progress_scope
 from bdsubmerge.domain.timebase import MediaTick90k
 from bdsubmerge.subtitles.pgs_adapter import (
     MAX_TIMESTAMP,
@@ -107,6 +108,19 @@ def test_append_preserves_caller_source_order() -> None:
         b"second",
     ]
     assert [packet.pts_90k for packet in merged.packets] == [1_100, 1_100, 2_200, 2_200]
+
+
+def test_append_reports_current_sup_source_detail() -> None:
+    document = parse_sup(_display_set(100, b"first"))
+    source_path = "/media/Subtitles/E01.sup"
+    progress: list[tuple[int, str]] = []
+
+    with progress_scope(lambda value, detail: progress.append((value, detail))):
+        append_sup_sources(
+            (PgsSource(document, MediaTick90k(0), "episode 1", source_path),)
+        )
+
+    assert any(detail == source_path for _, detail in progress)
 
 
 def test_non_monotonic_timestamps_are_reported() -> None:
