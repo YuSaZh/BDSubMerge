@@ -57,7 +57,7 @@ def test_nonexistent_output_still_resolves_relative_to_moved_project(tmp_path: P
 
     resolved = resolve_output_path(stored, project_file=project_file)
 
-    assert resolved == project_file.absolute().parent / "../media/BDMV/index.ass"
+    assert resolved == tmp_path / "media" / "BDMV" / "index.ass"
 
 
 def test_metadata_fingerprint_detects_change_and_missing_sources(tmp_path: Path) -> None:

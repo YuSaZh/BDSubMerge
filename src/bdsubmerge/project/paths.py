@@ -37,18 +37,26 @@ def resolve_path(stored: StoredPath, *, project_file: Path) -> Path:
     """Resolve relative location first, then use the absolute recovery hint."""
 
     if stored.relative is not None:
-        relative_candidate = project_file.absolute().parent / Path(stored.relative)
+        relative_candidate = _normalized_path(
+            project_file.absolute().parent / Path(stored.relative)
+        )
         if relative_candidate.exists():
             return relative_candidate
-    return Path(stored.absolute)
+    return _normalized_path(Path(stored.absolute))
 
 
 def resolve_output_path(stored: StoredPath, *, project_file: Path) -> Path:
     """Resolve a destination relative to the project even before it exists."""
 
     if stored.relative is not None:
-        return project_file.absolute().parent / Path(stored.relative)
-    return Path(stored.absolute)
+        return _normalized_path(project_file.absolute().parent / Path(stored.relative))
+    return _normalized_path(Path(stored.absolute))
+
+
+def _normalized_path(path: Path) -> Path:
+    """Collapse lexical parent segments without requiring the target to exist."""
+
+    return Path(os.path.normpath(path))
 
 
 def fingerprint(path: Path) -> FileFingerprint:

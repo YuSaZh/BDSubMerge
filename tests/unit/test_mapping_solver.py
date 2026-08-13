@@ -78,3 +78,93 @@ def test_overrun_is_penalized_more_than_normal_early_dialogue_end() -> None:
     result = auto_map_episodes((episode,), boundaries, config=config)
 
     assert result.mappings[0].end_boundary.id == "b2"
+
+
+def test_logo_play_item_is_left_as_an_explicit_gap_between_episodes() -> None:
+    episodes = (
+        EpisodeRequest("e1", MediaTick90k(90 * SECOND)),
+        EpisodeRequest("e2", MediaTick90k(90 * SECOND)),
+    )
+    boundaries = (
+        boundary(
+            "playlist-start",
+            0,
+            BoundarySource(BoundaryKind.PLAYLIST_START, "playlist"),
+        ),
+        boundary(
+            "episode-1-end",
+            90 * SECOND,
+            BoundarySource(BoundaryKind.PLAY_ITEM_END, "episode-1"),
+        ),
+        boundary(
+            "episode-2-start",
+            100 * SECOND,
+            BoundarySource(BoundaryKind.PLAY_ITEM_START, "episode-2"),
+        ),
+        boundary(
+            "playlist-end",
+            190 * SECOND,
+            BoundarySource(BoundaryKind.PLAYLIST_END, "playlist"),
+        ),
+    )
+
+    result = auto_map_episodes(episodes, boundaries)
+
+    assert [(item.start_boundary.id, item.end_boundary.id) for item in result.mappings] == [
+        ("playlist-start", "episode-1-end"),
+        ("episode-2-start", "playlist-end"),
+    ]
+    assert result.total_cost == 10 * SECOND // 50
+
+
+def test_one_episode_can_span_multiple_play_item_boundaries() -> None:
+    episode = EpisodeRequest("e1", MediaTick90k(90 * SECOND))
+    boundaries = (
+        boundary(
+            "playlist-start",
+            0,
+            BoundarySource(BoundaryKind.PLAYLIST_START, "playlist"),
+        ),
+        boundary(
+            "play-item-1-end",
+            30 * SECOND,
+            BoundarySource(BoundaryKind.PLAY_ITEM_END, "item:0"),
+            BoundarySource(BoundaryKind.PLAY_ITEM_START, "item:1"),
+        ),
+        boundary(
+            "play-item-2-end",
+            60 * SECOND,
+            BoundarySource(BoundaryKind.PLAY_ITEM_END, "item:1"),
+            BoundarySource(BoundaryKind.PLAY_ITEM_START, "item:2"),
+        ),
+        boundary(
+            "playlist-end",
+            90 * SECOND,
+            BoundarySource(BoundaryKind.PLAYLIST_END, "playlist"),
+        ),
+    )
+
+    result = auto_map_episodes((episode,), boundaries)
+
+    assert result.mappings[0].start_boundary.id == "playlist-start"
+    assert result.mappings[0].end_boundary.id == "playlist-end"
+    assert result.mappings[0].interval_duration_90k == 90 * SECOND
+
+
+def test_equal_cost_mapping_uses_stable_earliest_boundary_tie_breaker() -> None:
+    episode = EpisodeRequest("e1", MediaTick90k(100 * SECOND))
+    boundaries = (_boundary("b0", 0), _boundary("b1", 100), _boundary("b2", 200))
+    config = MappingCostConfig(
+        skipped_timeline_weight=0,
+        short_interval_threshold_90k=MediaTick90k(0),
+    )
+
+    forward = auto_map_episodes((episode,), boundaries, config=config)
+    reversed_input = auto_map_episodes((episode,), reversed(boundaries), config=config)
+
+    assert forward.total_cost == reversed_input.total_cost == 0
+    assert (forward.mappings[0].start_boundary.id, forward.mappings[0].end_boundary.id) == (
+        "b0",
+        "b1",
+    )
+    assert reversed_input.mappings[0] == forward.mappings[0]

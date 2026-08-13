@@ -82,3 +82,118 @@ def test_unknown_section_conflict_is_preserved_and_reported() -> None:
 
     assert len([section for section in result.document.sections if section.name == "Custom"]) == 2
     assert any(notice.code == "unknown_section_conflict" for notice in result.report.notices)
+
+
+def test_karaoke_tags_and_vector_drawing_survive_time_shift() -> None:
+    text = r"{\k20\kf30\ko10}歌{\p1}m 0 0 l 100 0 100 100{\p0}"
+    document = parse_ass(
+        "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n"
+        "[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Layer, Start, End, Style, Text\n"
+        f"Dialogue: 0,0:00:00.00,0:00:01.00,Default,{text}\n"
+    )
+
+    result = merge_ass(MergePlan((MergeSource("E01", document, 90_000),)))
+
+    event = result.document.events[0]
+    assert event.start_ticks == 90_000
+    assert event.end_ticks == 180_000
+    assert event.value("Text") == text
+    assert text in result.document.serialize()
+
+
+def _ass_with_extradata(data_id: int, content: str) -> AssDocument:
+    return parse_ass(
+        "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n"
+        "[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Layer, Start, End, Style, Text, Extra\n"
+        f"Dialogue: 0,0:00:00.00,0:00:01.00,Default,line,{data_id}\n"
+        "[Aegisub Extradata]\n"
+        f"Data: {data_id},{content}\n"
+    )
+
+
+def test_extradata_content_is_deduplicated_and_conflicting_id_is_remapped() -> None:
+    result = merge_ass(
+        MergePlan(
+            (
+                MergeSource("E01", _ass_with_extradata(0, "same"), 0),
+                MergeSource("E02", _ass_with_extradata(7, "same"), 90_000),
+                MergeSource("E03", _ass_with_extradata(0, "different"), 180_000),
+            )
+        )
+    )
+
+    extradata = result.document.section("Aegisub Extradata")
+    assert extradata is not None
+    assert extradata.serialize_lines() == (
+        "[Aegisub Extradata]",
+        "Data: 0,same",
+        "Data: 1,different",
+    )
+    assert [event.value("Extra") for event in result.document.events] == ["0", "0", "1"]
+    remaps = [notice for notice in result.report.notices if notice.code == "extradata_id_remapped"]
+    assert [(notice.source_label, notice.message) for notice in remaps] == [
+        ("E03", "Extradata ID 0 remapped to 1")
+    ]
+
+
+def _ass_with_attachments(*, font_data: str, graphic_data: str) -> AssDocument:
+    return parse_ass(
+        "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n"
+        "[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Layer, Start, End, Style, Text\n"
+        "Dialogue: 0,0:00:00.00,0:00:01.00,Default,line\n"
+        "[Fonts]\nfontname: shared.ttf\n"
+        f"{font_data}\n"
+        "[Graphics]\nfilename: shared.png\n"
+        f"{graphic_data}\n"
+    )
+
+
+def test_font_and_graphic_attachments_deduplicate_and_rename_conflicts() -> None:
+    result = merge_ass(
+        MergePlan(
+            (
+                MergeSource(
+                    "E01",
+                    _ass_with_attachments(font_data="font-a", graphic_data="graphic-a"),
+                    0,
+                ),
+                MergeSource(
+                    "E02",
+                    _ass_with_attachments(font_data="font-a", graphic_data="graphic-b"),
+                    90_000,
+                ),
+                MergeSource(
+                    "E03",
+                    _ass_with_attachments(font_data="font-b", graphic_data="graphic-a"),
+                    180_000,
+                ),
+            )
+        )
+    )
+
+    fonts = result.document.section("Fonts")
+    graphics = result.document.section("Graphics")
+    assert fonts is not None
+    assert graphics is not None
+    assert fonts.serialize_lines() == (
+        "[Fonts]",
+        "fontname: shared.ttf",
+        "font-a",
+        "fontname: shared.ttf__E03",
+        "font-b",
+    )
+    assert graphics.serialize_lines() == (
+        "[Graphics]",
+        "filename: shared.png",
+        "graphic-a",
+        "filename: shared.png__E02",
+        "graphic-b",
+    )
+    renames = [notice for notice in result.report.notices if notice.code == "attachment_renamed"]
+    assert [(notice.source_label, notice.message) for notice in renames] == [
+        ("E03", "attachment 'shared.ttf' renamed to 'shared.ttf__E03'"),
+        ("E02", "attachment 'shared.png' renamed to 'shared.png__E02'"),
+    ]
