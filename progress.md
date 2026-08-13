@@ -266,11 +266,11 @@
 | 我做了什么？ | 见上方记录 |
 
 ### 阶段 6 恢复与仓库规则核对（2026-08-13）
-- **状态：** in_progress
+- **状态：** complete
 - 用户最新规则已覆盖此前本地 Python 执行授权：本机禁止依赖安装、测试、Ruff、Mypy、构建、打包和项目代码执行，只保留源码检查、静态文本搜索、Git 与 `git diff --check`；根目录 `AGENTS.md`、计划、发现和双语开发说明已同步。
 - GitHub CLI 设备认证已由用户完成；本机 keyring 活动账号为 `YuSaZh`、Git 协议为 SSH 且权限完整，后续直接使用本机 `gh`/SSH 凭据，不再打开浏览器登录。
-- 根目录 `AGENTS.md` 已随 `e404ede` 推送，仓库通用规则明确固定 `py -3.12`、允许缺失 Python 包安装和本地 Python 验证、非 Python 新环境交给 GitHub Actions，并禁止浏览器登录 GitHub。
-- `main`、`origin/main` 与工作树核对无差异；当前 HEAD 为 `e5abdf4cbd857d93c94c3df85c63b13ab66006eb`。
+- 根目录 `AGENTS.md` 当前明确禁止本机依赖安装、测试、lint、类型检查、构建和打包；全部可执行验证交给 GitHub Actions，并禁止浏览器登录 GitHub。
+- `v1.0.0` 发布提交为 `e42354dab36b3897f94da201259dc17b9550a02a`，annotated tag 已推送且解引用后精确指向该提交。
 - 精确 SHA run `31694994062` 已全部成功：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows 真实 UNC 建立与清理、Ubuntu 四态截图矩阵和 artifacts 上传均通过。
 - 发布状态组合查询中的旧 `gh` API token 曾返回 401；用户随后通过 GitHub CLI 官方设备流程完成本机 keyring 登录。Hanam 本机用户上下文已验证完整申请 scopes、仓库 admin/maintain/push、Actions API 和 Release API，Git 协议仍为 SSH，当前 Release 列表为空。
 - 已统一 `1.0.0` 版本元数据并更新双语 README、用户指南和 Changelog；Windows 工作流新增带版本号 ZIP、最终 EXE 版本校验和中英文包内截图 artifact。首轮 Ruff 通过，5 项局部测试全部通过但被全局 coverage 门槛判为命令失败；Mypy 唯一诊断为 Qt 图片格式参数类型，已针对性修正。
@@ -280,3 +280,6 @@
 - 最终本机闭环完成：323 passed、2 deselected、coverage 84.64%，Ruff/Mypy strict/YAML/diff 均通过；`bdsubmerge-1.0.0` sdist/wheel 的版本和双语资源已核对；PyInstaller 6.22.0 onedir、清空 Python 环境后的 `--expect-version 1.0.0` 烟测通过。
 - 最终 EXE 原生 Windows 截图为中文浅色 `2160x1500` / SHA256 `90866d9ae73c17a5eeab63fd3c85533d12800828fcfa60565ad354a4093a71f3`，英文深色 `2160x1500` / SHA256 `eaa7225ad9bd7786d9c4b7848c37392b385434bea34f1af9cc5ba4fc1bca56e7`；人工审查字体、翻译、主题和布局正常，无重叠或截断。
 - commit `5a5ed53` 的 CI run `31698531549` 已全绿；Package run `31698548909` 已通过版本、构建、许可证、ZIP/SHA256 和无 Python 烟测，但原生 Windows 截图在无交互 runner 挂起。已取消候选 Package run，改为离屏截图显式加载系统字体，等待新提交重新闭环。
+- commit `e42354d` 的 CI run `31699687423` 已全绿：Ubuntu 323 passed、3 skipped、coverage 84.57%；Windows 326 passed、coverage 84.71%，双平台 Ruff/Mypy、Windows 真实 SMB/UNC 和 Ubuntu 截图矩阵均通过。
+- 正式 tag push 的 Package/Release run `31702184769` 已全绿：版本/tag/x64、许可证、ZIP/SHA256、无 Python 启动、最终 EXE 中英文截图及公开 Release 创建均成功。
+- `v1.0.0` Release 已发布且非 draft/prerelease；公开 ZIP 为 57,062,720 字节，SHA256 `89b690344ead539a8180fdc564192e5350d274438d47496dfe6977ede98d5093` 与清单一致。314 个条目无危险或重复路径，正式截图已人工确认无缺字、方框、重叠或截断。

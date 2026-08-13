@@ -5,9 +5,8 @@ MPLS timeline. It reads BDMV metadata without modifying the disc, maps ASS/SSA/S
 Blu-ray PGS SUP sources to playlist intervals, and writes external subtitles through
 preflighted, transactional output targets.
 
-> Status: 1.0.0 release candidate. The source workflow is complete; the final candidate must
-> pass CI, Windows packaging, checksum, license, no-Python startup, and packaged-UI evidence
-> on the same commit before the `v1.0.0` release is published.
+> Status: `v1.0.0` is released. The release commit passed CI, Windows packaging, checksum,
+> license, no-Python startup, and packaged-UI evidence gates.
 
 ## What It Does
 
@@ -23,10 +22,9 @@ preflighted, transactional output targets.
 
 ## Quick Start
 
-Use the downloadable Windows artifact for normal evaluation. Before the GitHub Release is
-published, open a successful **Package Windows** run from the repository's **Actions** page
-and download `BDSubMerge-windows-x64`. Verify the SHA-256 file, extract the versioned
-`BDSubMerge-<version>-windows-x64.zip`, and start `BDSubMerge.exe`. Keep the `_internal`
+Download `BDSubMerge-1.0.0-windows-x64.zip` and its SHA-256 file from the
+[`v1.0.0` release](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.0). Verify the
+checksum, extract the archive completely, and start `BDSubMerge.exe`. Keep the `_internal`
 directory beside the executable.
 
 The CLI is available in an installed environment:

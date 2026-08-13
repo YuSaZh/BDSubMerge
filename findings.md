@@ -18,9 +18,10 @@
 - `e404ede4b66a36318eec44f6405c5a4e3a9720e5` / run `31694449905` 已全绿：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows SMB/UNC 生命周期和 Ubuntu 四态截图矩阵全部成功；四个 artifacts 存在且未过期。当前 `gh` token 下载 artifact ZIP 返回 401，因此本轮无法重复人工目视截图，不能把矩阵成功夸大为新一轮人工视觉审查。
 - `e5abdf4cbd857d93c94c3df85c63b13ab66006eb` / run `31694994062` 也已全绿：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows SMB/UNC 生命周期、Ubuntu 四态截图矩阵和 artifacts 上传全部成功，成为当前精确 SHA 绿色基线。
 - 用户已通过 GitHub CLI 官方设备流程刷新 Hanam 本机 keyring 凭据；本机用户上下文中的 `gh` 现拥有完整申请 scope 集，对 `YuSaZh/BDSubMerge` 具有 admin/maintain/push 权限，Actions 与 Release API 均已验证可用。默认沙箱仍看见旧 token，因此后续 `gh` API 审计必须显式使用本机用户凭据上下文；Git 传输继续使用 SSH。
-- `1.0.0` 发布候选已统一 `pyproject.toml`、包 `__version__`、测试、双语文档和 Changelog。Windows 工作流从项目元数据解析稳定 SemVer，产出带版本号的 ZIP/SHA256，并要求最终 EXE 自校验内嵌版本。
+- `v1.0.0` 已从提交 `e42354dab36b3897f94da201259dc17b9550a02a` 正式发布。CI run `31699687423` 与 Package/Release run `31702184769` 全部成功；公开 ZIP SHA256 为 `89b690344ead539a8180fdc564192e5350d274438d47496dfe6977ede98d5093`。
 - Windows runner 的原生 Qt 平台在无交互桌面时会挂起；最终 EXE 视觉证据改用 `offscreen`，并在截图入口显式注册系统中英文字体。PNG 细节、尺寸和哈希门禁仍由远程工作流验证。
 - 当前最终源码本机验证为 323 passed、2 deselected、coverage 84.64%；两项 deselect 仅为要求 CI 临时 Windows SMB/UNC 环境的 AC-02。Ruff、Mypy strict、工作流 YAML、`git diff --check`、1.0.0 sdist/wheel、双语 wheel 资源、PyInstaller 6.22.0 onedir和无 Python EXE 版本烟测均通过。
+- 正式公开 Release 非 draft、非 prerelease，包含版本化 ZIP 与 SHA256 清单。公开下载副本的 314 个归档条目无危险或重复路径，EXE、双语资源和许可证清单存在；正式中英文截图为 `1440x1000`，无缺字、方框、重叠或截断。
 - GUI 项目源重定位缺口已关闭：打开项目遇到 changed/missing 输入时，在任何扫描或字幕加载前逐源定位；exact 直接接受，changed 默认拒绝并要求显式确认，完整成功后才原子写回项目。
 - 项目恢复必须在任何 BDMV 重扫或字幕重载前完成源门禁；否则 GUI 会把重载后的当前指纹当作新基线，使项目保存时记录的 changed/missing 身份约束失效。全部源完成恢复前还必须禁止覆盖原项目文件和生成输出。
 - `index_bdmv`、`playlist` 不能作为只改快照、不改实际读取源的孤立定位器。共享项目恢复服务必须构造并验证与已确认路径一致的运行时 layout/playlist/subtitles，CLI 与 GUI 都消费同一个准备结果。

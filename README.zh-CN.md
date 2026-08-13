@@ -4,9 +4,8 @@ BDSubMerge 是一款 Windows 优先的 BDMV 原盘字幕合并工具。它只读
 将按集排列的 ASS、SSA、SRT 或 Blu-ray PGS SUP 字幕映射到 MPLS 播放时间线，并通过
 预检和事务写入生成外挂字幕。
 
-> 当前状态：1.0.0 发布候选。源码工作流已经完成；同一候选提交必须同时通过 CI、
-> Windows 打包、哈希、许可证、无 Python 启动和最终包界面证据，之后才发布
-> `v1.0.0`。
+> 当前状态：`v1.0.0` 已发布。发布提交已通过 CI、Windows 打包、哈希、许可证、
+> 无 Python 启动和最终包界面证据门禁。
 
 ## 已实现能力
 
@@ -21,10 +20,9 @@ BDSubMerge 是一款 Windows 优先的 BDMV 原盘字幕合并工具。它只读
 
 ## 快速开始
 
-普通试用应使用 Windows artifact。在 GitHub Release 发布前，可在仓库 **Actions** 页面
-打开成功的 **Package Windows** 运行，下载 `BDSubMerge-windows-x64`，校验 SHA-256，
-完整解压带版本号的 `BDSubMerge-<version>-windows-x64.zip` 后运行 `BDSubMerge.exe`。
-不要移动或删除同目录中的 `_internal` 文件夹。
+从 [`v1.0.0` Release](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.0) 下载
+`BDSubMerge-1.0.0-windows-x64.zip` 和对应 SHA-256 文件。校验哈希后完整解压并运行
+`BDSubMerge.exe`；不要移动或删除同目录中的 `_internal` 文件夹。
 
 已安装环境中的 CLI 示例：
 
