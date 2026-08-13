@@ -643,7 +643,7 @@ def test_project_mapping_is_restored_by_subtitle_id(
         "playlist:end",
         0,
         90_000,
-        900,
+        901,
         True,
         "high",
     )
@@ -669,12 +669,14 @@ def test_project_mapping_is_restored_by_subtitle_id(
             "episode-1",
             "playlist:start",
             "playlist:end",
-            MediaTick90k(900),
+            MediaTick90k(901),
         ),
     )
     assert window.mapping_table.item(0, 4).text() == "playlist:start"
     assert window.mapping_table.item(0, 5).text() == "playlist:end"
     assert window.mapping_table.item(0, 7).text() == "10 ms"
+    assert window.subtitle_offsets_90k[subtitle] == 901
+    assert window._mapping_locks()[0].manual_offset_90k == 901
 
 
 def test_adding_directory_preserves_manual_order_and_appends_naturally(
@@ -812,7 +814,7 @@ def test_project_restore_uses_saved_subtitle_order_and_encoding(
     )
     window.subtitle_paths = [stale]
     window.locked_subtitles.add(stale)
-    window.subtitle_offsets_ms[stale] = 100
+    window.subtitle_offsets_90k[stale] = 9_000
     window.pending_project = RestoredProject(state, ())
 
     window._continue_project_restore()
@@ -824,7 +826,7 @@ def test_project_restore_uses_saved_subtitle_order_and_encoding(
     assert window.subtitle_paths == [episode_1, episode_2]
     assert tuple(window._row_path(row) for row in range(2)) == (episode_1, episode_2)
     assert stale not in window.locked_subtitles
-    assert stale not in window.subtitle_offsets_ms
+    assert stale not in window.subtitle_offsets_90k
 
 
 def test_user_boundaries_are_forwarded_and_invalidate_preflight(
@@ -999,7 +1001,7 @@ def test_reset_mapping_clears_manual_mapping_state(
 ) -> None:
     window, subtitle, _ = _prepared_mapping_window(qtbot, tmp_path)
     window.locked_subtitles.add(subtitle)
-    window.subtitle_offsets_ms[subtitle] = 125
+    window.subtitle_offsets_90k[subtitle] = 11_250
     window.restored_mapping_locks = (
         MappingLock(
             "episode-1",
@@ -1029,7 +1031,7 @@ def test_reset_mapping_clears_manual_mapping_state(
     window.reset_automatic_mapping()
 
     assert window.restored_mapping_locks == ()
-    assert window.subtitle_offsets_ms == {}
+    assert window.subtitle_offsets_90k == {}
     assert window.locked_subtitles == set()
     assert window.timeline.user_boundaries == ()
     assert window.restored_mapping_snapshots == ()

@@ -20,6 +20,8 @@
 - **状态：** in_progress
 - 工作模型已更新：本机禁止构建、测试、lint、类型检查、依赖安装和打包；仅允许源码检查、静态搜索、Git 操作与 `git diff --check`，所有执行型验证只走 GitHub Actions。
 - Git/GitHub 操作继续调用本机现有凭据，不通过浏览器重新登录；当前仓库远端为 `git@github.com:YuSaZh/BDSubMerge.git`。
+- 已在本机用户上下文验证 SSH 与 `gh` keyring：远程 `main` 为 `fdfddf9`，本地与
+  `origin/main` 分歧为 `0/0`，`YuSaZh` 的现有 `gh` 凭据具备 `repo` 权限。当前无环境阻塞。
 - 本机只有 Python 3.14.7，缺少项目要求的 Python 3.12 以及 pytest、Ruff、Mypy、build 和 PyInstaller；不新增本机环境，本批继续由 GitHub Actions 验证。
 - CLI、双语 PySide6 工作区、项目打开/保存、用户边界、AC-01 至 AC-10 测试正在合并。
 - 已为同刻用户/自动边界补充持久化锁 ID 规范化，避免项目恢复时锁引用失效。
@@ -66,6 +68,7 @@
 | 31665235086 | 完整 CI | 重定位/展示模型源码包通过；Ubuntu/Windows 同在 Ruff 阶段失败，日志权限受限 | fail |
 | 31665885218 | 完整 CI | `1ca58d6` 的 Ubuntu/Windows Ruff、Mypy、Pytest、真实 UNC 与源码包全部通过 | pass |
 | 31667939630 | 完整 CI | `62b9e06` 源码包通过；Ubuntu/Windows 均仅在 `application.__all__` 的 RUF022 排序诊断处停止 | fail |
+| 31668089029 | 完整 CI | `fdfddf9` 源码包及双平台 Ruff 通过；双平台 Mypy 同在 3 处类型收窄失败，Pytest 未运行 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -88,6 +91,9 @@
 | Package GUI 退出码 | 直接调用 `--windowed` EXE 后 `$LASTEXITCODE` 为空，门禁误判 | 使用 `Start-Process -Wait -PassThru` 读取真实 `ExitCode` |
 | Ruff 失败日志权限 | `gh run view --log-failed` 返回 403，check annotations 只有退出码 | 将 Ruff 输出设为 GitHub annotations，下一轮直接暴露文件、行号和规则 |
 | GUI 批次导出排序 | run `31667939630` 两平台均报告 `application.__all__` 的 RUF022 | 将新增全大写常量导出归入现有常量分组后重新推送验证 |
+| GUI 批次严格类型 | run `31668089029` 两平台共现 3 个根因 | 拆分 `boundary_id` 与两处 `mapping` 局部变量，并随精确 tick 批次推送验证 |
+| 规划文件同步 | 首次补丁把错误表上下文放错文件，补丁整体未应用 | 按文件真实上下文拆分后重新应用 |
+| GitHub 凭据上下文 | 沙箱内默认 `gh` 状态和 `known_hosts` 产生误判，提升权限后的首次命令又未继承仓库目录 | 使用本机用户凭据上下文，并以显式 `git -C`、SSH config/known_hosts 和远程 URL 验证；SSH 与 `gh` 均成功 |
 
 ## 五问重启检查
 | 问题 | 答案 |

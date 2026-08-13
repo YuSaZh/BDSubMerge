@@ -18,6 +18,9 @@
 - 输出目标可能尚不存在，恢复时必须无条件优先项目相对路径；源文件则只有相对候选存在时才优先，二者使用独立解析 API。
 - 用户边界与自动边界同刻时会被规范化为一个候选；应用层需把持久化锁的原始边界 ID 映射到规范 ID，避免恢复失败。
 - 当前 GUI 批次已将应用层 `MappingResult` 投影为时间线分集与实际内容区间，接通映射表/时间线双向选择，并让边界下拉或拖动生成 `MappingLock` 后按 revision 重新预检；该结论仍需 GitHub Actions 的 Qt 测试验证。
+- run `31668089029` 的源码包和 Ubuntu/Windows Ruff 已通过；两平台 Mypy 同样因 3 处局部变量类型收窄失败，Pytest 尚未运行。
+- GUI 恢复 offset 过去经 `// 90` 保存为毫秒再 `* 90`，会丢失非整毫秒 tick；内存态必须直接保存原始 90 kHz tick，毫秒只作为控件显示/输入单位。
+- GUI 编辑期间还需保证：运行中预检进入 pending、解锁清除人工 offset、非法时间线拖动回滚、任务期目录 drop 不改变状态，并使保存态反映当前锁与 offset。
 
 ## 技术决策
 | 决策 | 理由 |
@@ -37,6 +40,9 @@
 - Windows onedir 包保留独立 Qt DLL，并收集实际 wheel 的 LGPL/第三方许可证与源码入口。
 
 ## 外部状态
+- 2026-08-13 已在本机用户凭据上下文验证：Git SSH 可读取
+  `git@github.com:YuSaZh/BDSubMerge.git`，远程 `main` 为 `fdfddf9`；`gh` keyring 中
+  `YuSaZh` 账号有效、使用 SSH 且具备 `repo` 权限。无需浏览器登录或新增本机开发环境。
 - GitHub Actions run `31627068738`：M5 核心在 Windows、Ubuntu 与 source distribution 全部成功。
 - GitHub Actions run `31630779273`：source distribution 成功；Ubuntu 与 Windows
   均只在 Ruff 阶段因同一组 16 项诊断失败，后续 Mypy、Pytest 和 UI 截图未执行。

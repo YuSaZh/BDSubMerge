@@ -399,13 +399,15 @@ class TimelineView(QGraphicsView):
         total = int(self._playlist.duration_90k)
         kind = item.data(ITEM_KIND_ROLE)
         if kind == "user_boundary":
-            boundary_id = str(item.data(ITEM_ID_ROLE))
+            user_boundary_id = str(item.data(ITEM_ID_ROLE))
             x = max(0.0, min(item.pos().x(), self._timeline_width))
             item.setPos(x, 0)
             time_90k = self._clamp_ticks(int(x * total / self._timeline_width))
-            self._user_boundaries[boundary_id] = time_90k
-            item.setToolTip(f"{boundary_id}: {self._format_time(time_90k)}")
-            self.user_boundary_moved.emit(boundary_id, time_90k)
+            self._user_boundaries[user_boundary_id] = time_90k
+            item.setToolTip(
+                f"{user_boundary_id}: {self._format_time(time_90k)}"
+            )
+            self.user_boundary_moved.emit(user_boundary_id, time_90k)
             return
         if kind != "episode_handle":
             return
@@ -413,23 +415,23 @@ class TimelineView(QGraphicsView):
         edge = str(item.data(ITEM_EDGE_ROLE))
         x = max(0.0, min(item.pos().x(), self._timeline_width))
         raw_time = self._clamp_ticks(int(x * total / self._timeline_width))
-        time_90k, boundary_id = self.snap_time(
+        time_90k, snapped_boundary_id = self.snap_time(
             raw_time,
             disabled=bool(event.modifiers() & Qt.KeyboardModifier.AltModifier),
         )
         added_user_boundary = False
-        if boundary_id is None:
-            boundary_id = self._add_user_boundary(time_90k)
+        if snapped_boundary_id is None:
+            snapped_boundary_id = self._add_user_boundary(time_90k)
             added_user_boundary = True
         item.setPos(time_90k * self._timeline_width / total, 0)
         self.episode_boundary_moved.emit(
             episode_id,
             edge,
             time_90k,
-            boundary_id,
+            snapped_boundary_id,
         )
         if added_user_boundary:
-            self.user_boundary_added.emit(boundary_id, time_90k)
+            self.user_boundary_added.emit(snapped_boundary_id, time_90k)
 
     @override
     def keyPressEvent(self, event: QKeyEvent) -> None:

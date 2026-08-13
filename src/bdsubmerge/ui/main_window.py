@@ -142,7 +142,7 @@ class MainWindow(QMainWindow):
         self.pending_restore_after_scan = False
         self.subtitle_paths: list[Path] = []
         self.locked_subtitles: set[Path] = set()
-        self.subtitle_offsets_ms: dict[Path, int] = {}
+        self.subtitle_offsets_90k: dict[Path, int] = {}
         self.output_states = [
             OutputState(
                 "primary",
@@ -1056,7 +1056,7 @@ class MainWindow(QMainWindow):
 
     def _clear_playlist_mapping(self) -> None:
         self._clear_mapping_constraints()
-        self.subtitle_offsets_ms.clear()
+        self.subtitle_offsets_90k.clear()
         self.timeline.set_user_boundaries(())
         self.mapping_dirty = self.subtitle_result is not None
         self._populate_mapping_table()
@@ -1239,7 +1239,7 @@ class MainWindow(QMainWindow):
         self.subtitle_result = None
         self.mapping_table.setRowCount(0)
         self.locked_subtitles.clear()
-        self.subtitle_offsets_ms.clear()
+        self.subtitle_offsets_90k.clear()
         self.restored_mapping_locks = ()
         self.restored_mapping_snapshots = ()
         self.prepared = None
@@ -1304,7 +1304,7 @@ class MainWindow(QMainWindow):
             path = subtitle.path
             if mapping.locked:
                 self.locked_subtitles.add(path)
-            self.subtitle_offsets_ms[path] = mapping.manual_offset_90k // 90
+            self.subtitle_offsets_90k[path] = mapping.manual_offset_90k
             values = (
                 mapping.start_boundary_id,
                 mapping.end_boundary_id,
@@ -1446,9 +1446,9 @@ class MainWindow(QMainWindow):
         self.mapping_dirty = False
         loaded_paths = {asset.path for asset in result.assets}
         self.subtitle_paths = [path for path in self.subtitle_paths if path in loaded_paths]
-        self.subtitle_offsets_ms = {
+        self.subtitle_offsets_90k = {
             path: value
-            for path, value in self.subtitle_offsets_ms.items()
+            for path, value in self.subtitle_offsets_90k.items()
             if path in loaded_paths
         }
         self._populate_mapping_table()
@@ -1470,7 +1470,7 @@ class MainWindow(QMainWindow):
             row = self.mapping_table.rowCount()
             self.mapping_table.insertRow(row)
             duration = asset.analysis.effective_end_ticks or 0
-            offset_ms = self.subtitle_offsets_ms.get(asset.path, 0)
+            offset_ms = self.subtitle_offsets_90k.get(asset.path, 0) // 90
             values = (
                 str(index + 1),
                 asset.path.name,
@@ -1501,7 +1501,7 @@ class MainWindow(QMainWindow):
         else:
             self.subtitle_result = None
             self.mapping_table.setRowCount(0)
-            self.subtitle_offsets_ms.clear()
+            self.subtitle_offsets_90k.clear()
             self._clear_mapping_constraints()
             self.mapping_dirty = False
             self._invalidate_preflight(preserve_mapping=False)
@@ -1600,15 +1600,16 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def apply_batch_offset(self) -> None:
-        value = self.offset_spin.value()
+        value_ms = self.offset_spin.value()
+        value_90k = value_ms * 90
         rows = {item.row() for item in self.mapping_table.selectedItems()}
         for row in rows:
             path = self._row_path(row)
             item = self.mapping_table.item(row, 7)
             if path is not None and item is not None:
-                self.subtitle_offsets_ms[path] = value
-                item.setText(f"{value} ms")
-                if value != 0:
+                self.subtitle_offsets_90k[path] = value_90k
+                item.setText(f"{value_ms} ms")
+                if value_90k != 0:
                     self.locked_subtitles.add(path)
                     status = self.mapping_table.item(row, 9)
                     if status is not None:
@@ -1650,7 +1651,7 @@ class MainWindow(QMainWindow):
             return
         self.mapping_preflight_timer.stop()
         self.locked_subtitles.clear()
-        self.subtitle_offsets_ms.clear()
+        self.subtitle_offsets_90k.clear()
         self.restored_mapping_locks = ()
         self.restored_mapping_snapshots = ()
         self.timeline.set_user_boundaries(())
@@ -1974,14 +1975,14 @@ class MainWindow(QMainWindow):
                 default_offset_90k = snapshot.manual_offset_90k
             else:
                 continue
-            manual_offset_ms = self.subtitle_offsets_ms.get(
+            manual_offset_90k = self.subtitle_offsets_90k.get(
                 path,
-                default_offset_90k // 90,
+                default_offset_90k,
             )
             if (
                 restored is None
                 and path not in self.locked_subtitles
-                and manual_offset_ms == 0
+                and manual_offset_90k == 0
             ):
                 continue
             locks.append(
@@ -1989,7 +1990,7 @@ class MainWindow(QMainWindow):
                     episode_id,
                     start_id,
                     end_id,
-                    MediaTick90k(manual_offset_ms * 90),
+                    MediaTick90k(manual_offset_90k),
                 )
             )
         return tuple(locks)
@@ -2047,19 +2048,19 @@ class MainWindow(QMainWindow):
                     int(lock.manual_offset_90k),
                 )
         if self.prepared is not None and self.prepared.mapping is not None:
-            for mapping in self.prepared.mapping.mappings:
-                if mapping.episode_id == episode_id:
+            for prepared_mapping in self.prepared.mapping.mappings:
+                if prepared_mapping.episode_id == episode_id:
                     return (
-                        mapping.start_boundary.id,
-                        mapping.end_boundary.id,
-                        int(mapping.manual_offset_90k),
+                        prepared_mapping.start_boundary.id,
+                        prepared_mapping.end_boundary.id,
+                        int(prepared_mapping.manual_offset_90k),
                     )
-        for mapping in self.restored_mapping_snapshots:
-            if mapping.subtitle_id == episode_id:
+        for snapshot in self.restored_mapping_snapshots:
+            if snapshot.subtitle_id == episode_id:
                 return (
-                    mapping.start_boundary_id,
-                    mapping.end_boundary_id,
-                    mapping.manual_offset_90k,
+                    snapshot.start_boundary_id,
+                    snapshot.end_boundary_id,
+                    snapshot.manual_offset_90k,
                 )
         return None
 
@@ -2255,7 +2256,7 @@ class MainWindow(QMainWindow):
             path = self._row_path(row) if row is not None else None
             if path is not None:
                 self.locked_subtitles.discard(path)
-                self.subtitle_offsets_ms.pop(path, None)
+                self.subtitle_offsets_90k.pop(path, None)
         self.mapping_dirty = True
         self._invalidate_preflight(preserve_mapping=False)
         self._schedule_mapping_preflight()
@@ -2298,7 +2299,7 @@ class MainWindow(QMainWindow):
             path = self._row_path(row) if row is not None else None
             if path is not None:
                 self.locked_subtitles.discard(path)
-                self.subtitle_offsets_ms.pop(path, None)
+                self.subtitle_offsets_90k.pop(path, None)
         self.mapping_dirty = True
         self._invalidate_preflight(preserve_mapping=False)
         self._schedule_mapping_preflight()
@@ -2357,7 +2358,7 @@ class MainWindow(QMainWindow):
             path = Path(mapping.subtitle_ref)
             if mapping.locked:
                 self.locked_subtitles.add(path)
-            self.subtitle_offsets_ms[path] = int(mapping.manual_offset_90k) // 90
+            self.subtitle_offsets_90k[path] = int(mapping.manual_offset_90k)
             values = (
                 mapping.start_boundary.id,
                 mapping.end_boundary.id,
@@ -2493,16 +2494,16 @@ class MainWindow(QMainWindow):
         assets_by_path = {asset.path: asset for asset in subtitle_result.assets}
         episodes: list[TimelineEpisode] = []
         if self.prepared is not None and self.prepared.mapping is not None:
-            for mapping in self.prepared.mapping.mappings:
-                path = Path(mapping.subtitle_ref)
+            for prepared_mapping in self.prepared.mapping.mappings:
+                path = Path(prepared_mapping.subtitle_ref)
                 asset = assets_by_path.get(path)
                 episodes.append(
                     self._timeline_episode(
-                        episode_id=mapping.episode_id,
+                        episode_id=prepared_mapping.episode_id,
                         label=path.name,
-                        start_90k=int(mapping.start_boundary.time_90k),
-                        end_90k=int(mapping.end_boundary.time_90k),
-                        final_offset_90k=int(mapping.final_offset_90k),
+                        start_90k=int(prepared_mapping.start_boundary.time_90k),
+                        end_90k=int(prepared_mapping.end_boundary.time_90k),
+                        final_offset_90k=int(prepared_mapping.final_offset_90k),
                         earliest_start_90k=(
                             asset.analysis.earliest_start_ticks
                             if asset is not None
@@ -2511,9 +2512,12 @@ class MainWindow(QMainWindow):
                         raw_end_90k=(
                             asset.analysis.raw_end_ticks if asset is not None else None
                         ),
-                        confidence=mapping.confidence.value,
-                        locked=(mapping.locked or path in self.locked_subtitles),
-                        warnings=mapping.warnings,
+                        confidence=prepared_mapping.confidence.value,
+                        locked=(
+                            prepared_mapping.locked
+                            or path in self.locked_subtitles
+                        ),
+                        warnings=prepared_mapping.warnings,
                     )
                 )
             return tuple(episodes)
@@ -2521,15 +2525,21 @@ class MainWindow(QMainWindow):
             f"episode-{index + 1}": asset
             for index, asset in enumerate(subtitle_result.assets)
         }
-        for mapping in self.restored_mapping_snapshots:
-            asset = assets_by_episode.get(mapping.subtitle_id)
+        for snapshot in self.restored_mapping_snapshots:
+            asset = assets_by_episode.get(snapshot.subtitle_id)
             episodes.append(
                 self._timeline_episode(
-                    episode_id=mapping.subtitle_id,
-                    label=asset.path.name if asset is not None else mapping.subtitle_id,
-                    start_90k=mapping.start_90k,
-                    end_90k=mapping.end_90k,
-                    final_offset_90k=mapping.start_90k + mapping.manual_offset_90k,
+                    episode_id=snapshot.subtitle_id,
+                    label=(
+                        asset.path.name
+                        if asset is not None
+                        else snapshot.subtitle_id
+                    ),
+                    start_90k=snapshot.start_90k,
+                    end_90k=snapshot.end_90k,
+                    final_offset_90k=(
+                        snapshot.start_90k + snapshot.manual_offset_90k
+                    ),
                     earliest_start_90k=(
                         asset.analysis.earliest_start_ticks
                         if asset is not None
@@ -2538,9 +2548,9 @@ class MainWindow(QMainWindow):
                     raw_end_90k=(
                         asset.analysis.raw_end_ticks if asset is not None else None
                     ),
-                    confidence=mapping.confidence,
-                    locked=mapping.locked,
-                    warnings=mapping.warnings,
+                    confidence=snapshot.confidence,
+                    locked=snapshot.locked,
+                    warnings=snapshot.warnings,
                 )
             )
         return tuple(episodes)
