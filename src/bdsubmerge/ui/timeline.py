@@ -51,6 +51,7 @@ class TimelineView(QGraphicsView):
     user_boundary_deleted = Signal(str)
     episode_selected = Signal(str)
     episode_boundary_moved = Signal(str, str, int, str)
+    zoom_changed = Signal(int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -72,6 +73,10 @@ class TimelineView(QGraphicsView):
         self._chapter_label = "Chapter"
         self._empty_text = ""
         self._dragged_item: QGraphicsItem | None = None
+        self._zoom_step = 0
+        self._maximum_zoom_step = 12
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def show_playlist(
@@ -82,11 +87,25 @@ class TimelineView(QGraphicsView):
         chapter_label: str,
         empty_text: str,
     ) -> None:
+        reset_zoom = (
+            playlist is not self._playlist
+            and (
+                playlist is None
+                or self._playlist is None
+                or playlist.path != self._playlist.path
+                or playlist.duration_90k != self._playlist.duration_90k
+            )
+        )
         self._playlist = playlist
         self._item_label = item_label
         self._chapter_label = chapter_label
         self._empty_text = empty_text
-        self._render_scene(fit=True)
+        if reset_zoom:
+            self._zoom_step = 0
+            self.resetTransform()
+        self._render_scene(fit=reset_zoom)
+        if reset_zoom:
+            self.zoom_changed.emit(self.zoom_percent)
 
     def set_candidate_boundaries(
         self, boundaries: tuple[TimelineBoundary, ...]
@@ -120,6 +139,10 @@ class TimelineView(QGraphicsView):
     @property
     def time_format(self) -> TimeDisplayFormat:
         return self._time_format
+
+    @property
+    def zoom_percent(self) -> int:
+        return round(100 * (1.2**self._zoom_step))
 
     @property
     def user_boundaries(self) -> tuple[tuple[str, int], ...]:
@@ -500,12 +523,25 @@ class TimelineView(QGraphicsView):
 
     @override
     def wheelEvent(self, event: QWheelEvent) -> None:
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
-            self.scale(factor, factor)
+        delta = event.angleDelta().y()
+        if delta == 0 or self._playlist is None:
+            super().wheelEvent(event)
+            return
+        next_step = max(
+            0,
+            min(
+                self._maximum_zoom_step,
+                self._zoom_step + (1 if delta > 0 else -1),
+            ),
+        )
+        if next_step == self._zoom_step:
             event.accept()
             return
-        super().wheelEvent(event)
+        factor = 1.2 if next_step > self._zoom_step else 1 / 1.2
+        self.scale(factor, 1.0)
+        self._zoom_step = next_step
+        self.zoom_changed.emit(self.zoom_percent)
+        event.accept()
 
 
 def format_media_time(

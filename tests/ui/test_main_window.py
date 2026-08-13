@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QItemSelectionModel, QSettings, Qt
-from PySide6.QtWidgets import QComboBox, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QComboBox, QFileDialog, QHeaderView, QMessageBox
 from pytestqt.qtbot import QtBot
 
 from bdsubmerge.application import (
@@ -1799,6 +1799,61 @@ def test_preflight_installs_boundary_combos_in_mapping_table(
     assert end_combo.currentData() == "playlist:end"
     assert start_combo.findData("user:middle") >= 0
     assert end_combo.findData("user:middle") >= 0
+    assert start_combo.currentText() == "playlist:start"
+    expanded_label = start_combo.itemText(start_combo.findData("user:middle"))
+    assert expanded_label.startswith("user:middle  ")
+    assert "00:00:05.000" in expanded_label
+
+
+def test_mapping_layout_is_resizable_and_report_options_are_collapsed(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+
+    assert window.workspace_splitter.orientation() is Qt.Orientation.Vertical
+    assert window.mapping_table.verticalHeader().isHidden()
+    assert window.mapping_table.minimumHeight() >= 190
+    assert all(
+        window.mapping_table.horizontalHeader().sectionResizeMode(column)
+        is QHeaderView.ResizeMode.Interactive
+        for column in range(window.mapping_table.columnCount())
+    )
+    assert window.report_configuration.isHidden()
+
+    window.report_enabled.setChecked(True)
+
+    assert not window.report_configuration.isHidden()
+
+
+def test_mapping_filename_tooltip_and_chinese_issue_text(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    subtitle = tmp_path / "a very long subtitle filename.ass"
+    window.subtitle_result = LoadSubtitlesResult(
+        (_subtitle_asset(subtitle, "utf-8"),), SubtitleFormat.ASS
+    )
+    window._populate_mapping_table()
+
+    assert window.mapping_table.item(0, 1).toolTip() == str(subtitle)
+    issue = ApplicationIssue(
+        ApplicationSeverity.WARNING,
+        "low_mapping_confidence",
+        "low-confidence automatic mapping requires explicit confirmation",
+    )
+    message = window._format_issue(issue)
+    assert message.startswith("[警告] low_mapping_confidence: 低置信度自动映射需要明确确认")
+    assert "原始信息:" in message
+    assert window._localized_mapping_warnings(
+        (
+            "subtitle duration is estimated",
+            "automatic mapping requires explicit confirmation",
+        )
+    ) == "字幕时长为估算值; 自动映射需要明确确认"
 
 
 def test_mapping_table_and_timeline_selection_are_bidirectional(

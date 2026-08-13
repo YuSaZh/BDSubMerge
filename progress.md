@@ -1,5 +1,25 @@
 # 进度日志
 
+## 会话：2026-08-13（v1.0.1 用户反馈）
+
+### 反馈收集与实现审计
+- **状态：** in_progress
+- 已读取三张用户截图并确认字幕表高度不足、文件名截断、序号重复和未启用报告配置仍占空间四项可见问题。
+- 本批将同时处理许可证打包、双语 README、诊断中文化、时间线滚轮缩放、边界章节显示和 v1.0.1 发布说明。
+- 按用户最终规则和仓库 `AGENTS.md`，本机固定使用 `py -3.12`，允许安装 Python 包并执行测试、Ruff、Mypy、构建和打包；需要新增非 Python 环境的验证交给 GitHub Actions，最终推送提交按精确 SHA 审计。
+- 已定位 GUI 实现：字幕表默认伸缩策略阻止自由列宽、左侧 vertical header 与“序号”数据列重复、报告配置只禁用未隐藏、边界 cell 与下拉均使用同一完整标签。
+- 已定位时间线实现：完整时长直接映射视口，需新增整数 tick 可见窗口与滚轮锚点缩放；应用核心仍保持 90 kHz 整数 tick。
+- 已定位打包实现：`.github/workflows/package-windows.yml` 显式创建并验证 `LICENSES/`；v1.0.1 将只复制和验证项目根 `LICENSE`。
+- 一次只读命令误猜工作流为 `.github/workflows/package.yml`，实际文件是 `package-windows.yml`；已按真实路径继续，未产生写入或执行项目代码。
+- GUI/翻译局部回归为 70 passed；全仓 Ruff、64 模块严格 Mypy、328 passed/2 deselected、84.76% coverage 和 `1.0.1` sdist/wheel 均通过。两项 deselect 仅为 CI 创建临时 Windows SMB/UNC 共享的 AC-02。
+- 本机 PyInstaller 6.22.0 已成功生成 Windows onedir。首次把 ZIP 压缩和内容检查并行执行时，检查在压缩完成前读取文件而得到 `FileNotFoundError`；压缩随后成功，改为串行审计，不重复该竞态方式。
+- 首次调用 UI 截图脚本误用了不存在的 `--output` 参数；脚本要求目标路径作为位置参数，未生成截图或修改源码，已按真实 CLI 更正。
+- 自动枚举诊断码时发现 7 个播放列表选择相关错误/警告码缺少中文说明，已补齐并保留原始技术信息作为附注。
+- 最终本地源码门禁通过：328 passed、2 deselected、coverage 84.77%，Ruff、64 模块严格 Mypy、73 个静态诊断码中文目录完整性和 `git diff --check` 全部通过。
+- 最终 Windows onedir/ZIP 审计通过：283 个条目、54,332,705 字节，EXE、双语资源和项目 `LICENSE` 存在，`LICENSES/` 与 `THIRD_PARTY_NOTICES.md` 不存在；清空 Python 环境后的 1.0.1 烟测退出 0。
+- 最终 EXE 中文浅色截图为 1440x1000、106,123 字节；人工确认 CJK 字体完整、字幕区默认增高、序号不重复、报告选项折叠、缩放状态可见且无重叠/截断。
+- 发布前首次远端 freshness 检查曾被 GitHub 瞬时拒绝；复测同一 ED25519 key `SHA256:H1xBwagKgdzgqc7nm+K7dwJExyRvC9y96GnAAUDH+KA` 已成功认证为 `YuSaZh`，`git ls-remote` 也成功读取远端 `main=288524a4...`。密钥和 SSH 配置有效，无需恢复、添加或切换认证；继续原定发布流程。
+
 ## 会话：2026-08-13
 
 ### GUI 项目源重定位批次
@@ -267,9 +287,9 @@
 
 ### 阶段 6 恢复与仓库规则核对（2026-08-13）
 - **状态：** complete
-- 用户最新规则已覆盖此前本地 Python 执行授权：本机禁止依赖安装、测试、Ruff、Mypy、构建、打包和项目代码执行，只保留源码检查、静态文本搜索、Git 与 `git diff --check`；根目录 `AGENTS.md`、计划、发现和双语开发说明已同步。
+- 本条记录的是当时采用、后来被用户明确撤销的旧规则：曾短暂禁止本机 Python 执行；当前规则已恢复为本机使用 `py -3.12` 完成 Python 依赖、测试、Ruff、Mypy、构建和打包。
 - GitHub CLI 设备认证已由用户完成；本机 keyring 活动账号为 `YuSaZh`、Git 协议为 SSH 且权限完整，后续直接使用本机 `gh`/SSH 凭据，不再打开浏览器登录。
-- 根目录 `AGENTS.md` 当前明确禁止本机依赖安装、测试、lint、类型检查、构建和打包；全部可执行验证交给 GitHub Actions，并禁止浏览器登录 GitHub。
+- 根目录 `AGENTS.md` 当时曾写入零执行限制；该限制现已撤销并改为允许本机 Python 3.12 验证，需要新增非 Python 环境的验证才交给 GitHub Actions。
 - `v1.0.0` 发布提交为 `e42354dab36b3897f94da201259dc17b9550a02a`，annotated tag 已推送且解引用后精确指向该提交。
 - 精确 SHA run `31694994062` 已全部成功：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows 真实 UNC 建立与清理、Ubuntu 四态截图矩阵和 artifacts 上传均通过。
 - 发布状态组合查询中的旧 `gh` API token 曾返回 401；用户随后通过 GitHub CLI 官方设备流程完成本机 keyring 登录。Hanam 本机用户上下文已验证完整申请 scopes、仓库 admin/maintain/push、Actions API 和 Release API，Git 协议仍为 SSH，当前 Release 列表为空。

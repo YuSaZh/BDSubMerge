@@ -16,6 +16,16 @@ def test_default_locale_is_simplified_chinese_and_can_switch_to_english() -> Non
     )
     assert catalog.text("subtitles.details") == "Source details"
     assert catalog.text("status.scan_complete", count=3) == "Scan complete: 3 playlists"
+    assert catalog.text("timeline.zoom", percent=120) == "Zoom 120%"
+
+
+def test_chinese_catalog_contains_localized_diagnostic_severity_and_message() -> None:
+    catalog = TranslationCatalog()
+
+    assert catalog.text("severity.warning") == "警告"
+    assert catalog.text("issue.low_mapping_confidence") == (
+        "低置信度自动映射需要明确确认"
+    )
 
 
 def test_unknown_translation_key_remains_visible() -> None:

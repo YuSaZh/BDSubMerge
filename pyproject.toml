@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bdsubmerge"
-version = "1.0.0"
+version = "1.0.1"
 description = "Build external subtitles against a Blu-ray MPLS timeline"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

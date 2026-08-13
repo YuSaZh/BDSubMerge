@@ -1,17 +1,17 @@
 # BDSubMerge 开发计划
 
 ## 目标
-已按照项目任务书完成并发布 BDSubMerge 1.0；本机只做源码检查、静态文本搜索、Git 操作和不执行代码的文件检查，全部可执行验证由精确提交 SHA 的 GitHub Actions 完成。
+已按照项目任务书完成并发布 BDSubMerge 1.0；当前使用本机 Python 3.12 完成 Python 依赖、测试、质量检查、构建与打包，需要新增非 Python 环境的验证由精确提交 SHA 的 GitHub Actions 完成。
 
 ## 当前阶段
-阶段 6/6 已完成：版本、打包、远程验收与公开发布
+阶段 7/7 v1.0.1 用户反馈修复：界面可用性、诊断本地化与发布
 
 ## 工作模型（2026-08-13 用户最新确认）
 1. `v1.0.0` 发布基线为提交 `e42354dab36b3897f94da201259dc17b9550a02a`；CI run `31699687423` 与正式 Package/Release run `31702184769` 均成功。
 2. 当前仓库 `AGENTS.md` 和用户最新指令是执行边界的唯一准则；旧摘要、历史会话记录或工具建议不得覆盖这些规则。
-3. 本机禁止依赖安装、测试、Ruff、Mypy、构建、打包及任何项目代码执行；不得因已有 Python 环境而例外执行。
-4. 全部可执行验证仅由 GitHub Actions 完成，包括 Python 3.12、双平台、Windows SMB/UNC、截图和打包验证。
-5. 每个可审查批次都按“源码与测试编辑 -> 静态审查 -> `git diff --check` -> 提交 -> 使用本机 SSH/`gh` 凭据推送 -> 等待精确提交 SHA 的 GitHub Actions -> 审计日志与 artifact”闭环。
+3. 本机 Python 命令固定使用 `py -3.12`；允许安装 Python 包并执行测试、Ruff、Mypy、构建和打包。
+4. 需要新增非 Python 环境的验证交给 GitHub Actions；最终推送提交仍须按精确 SHA 完成远程审计，包括双平台、Windows SMB/UNC 和发布候选验证。
+5. 每个可审查批次都按“源码与测试编辑 -> 本机 Python 3.12 验证 -> `git diff --check` -> 提交 -> 使用本机 SSH/`gh` 凭据推送 -> 等待精确提交 SHA 的 GitHub Actions -> 审计日志与 artifact”闭环。
 6. Git 操作直接使用本机现有 SSH/Git Credential Manager 凭据；不打开浏览器登录、不创建替代身份、不改全局 Git 配置。`gh` 缓存 token 与 Git SSH 凭据分开判断，Git 凭据可用时不得转入浏览器。
 7. 遇到工作树来源、Git SSH 凭据、CI、artifact 或发布门禁异常时先停止扩大范围，保留现场并向用户确认；`gh` API 调用使用已刷新凭据的 Hanam 本机用户上下文，默认沙箱旧 token 不作为认证结论。
 8. 发布顺序固定为：完成 GUI 项目源重定位 -> 复核剩余规范缺口 -> 收紧 Windows 包与版本/截图门禁 -> 统一 `1.0.0` 元数据和双语文档 -> 推送最终候选并审计 CI/ZIP/SHA256/许可证/视觉证据 -> 创建 `v1.0.0` tag 和 GitHub Release。
@@ -85,9 +85,21 @@
 - [x] 完成统一 `1.0.0` 版本元数据的远程发布验证
 - **状态：** complete
 
+### 阶段 7：v1.0.1 用户反馈修复与发布
+- [x] 精简发布包许可证内容，README 双语列明参考项目并提供中文 README 跳转
+- [x] 字幕映射区域默认高度翻倍并支持手动拖动调整，列宽可调且长文件名可查看全文
+- [x] 去除字幕序号的重复显示
+- [x] 为错误和警告提供简体中文显示文本
+- [x] 时间线支持鼠标滚轮缩放并保留可发现的缩放状态
+- [x] 未勾选写入合并报告时折叠报告选项
+- [x] 边界单元格仅显示章节，下拉选项保留章节与时间
+- [x] 统一版本为 `1.0.1`，补充有实际内容的 Changelog 与 GitHub Release notes
+- [ ] 由精确 SHA 的 GitHub Actions 完成双平台测试、截图、Windows 打包和公开 Release 审计
+- **状态：** in_progress
+
 ## 关键约束
-1. 本机禁止依赖安装、测试、lint、类型检查、构建、打包及项目代码执行，只允许源码检查、静态文本搜索、Git 和 `git diff --check` 等非执行检查。
-2. 全部验证只在 GitHub Actions 执行；最终提交必须通过精确 SHA 的远程 CI 审计。
+1. 本机 Python 命令固定使用 `py -3.12`，允许安装 Python 包并执行测试、Ruff、Mypy、构建和打包。
+2. 需要新增非 Python 环境的验证交给 GitHub Actions；最终提交必须通过精确 SHA 的远程 CI 审计。
 3. Git 和 GitHub 操作使用本机现有凭据，不通过浏览器重新登录。
 4. 遇到异常先定位根因；不得扩大系统或仓库变更范围。
 
@@ -139,3 +151,6 @@
 | 进度审计模块路径假设 | 1 | ASS/SRT 实际统一位于 `merge/engine.py`，SUP 位于 `subtitles/pgs_adapter.py`；按 `rg --files` 的真实路径继续 |
 | 进度批次远程 Pytest | 1 | run `31674853072` 两平台同一 GUI 测试替身不接受新增 `cancellation_check` 关键字；同步两处替身与应用服务接口后继续远程验证 |
 | 默认沙箱 SSH 只读检查超时 | 1 | 显式读取 Hanam 本机 SSH config/known_hosts 后成功，确认远端 `main` 为 `8fd25a7`；不使用浏览器或失效的 `gh` token |
+| 本地 ZIP 内容检查竞态 | 1 | 压缩与检查并行导致检查先于 ZIP 生成完成；压缩已成功，后续改为串行审计现有 ZIP |
+| UI 截图参数假设 | 1 | `capture_workspace.py` 的目标路径是位置参数，不支持 `--output`；按脚本帮助更正调用 |
+| GitHub SSH 瞬时拒绝 | 1 | 首次 publickey 失败后按边界停止；同一 key 复测认证为 `YuSaZh` 且 `git ls-remote` 成功，确认无需改 key 或认证配置并继续发布 |

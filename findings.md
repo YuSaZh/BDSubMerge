@@ -1,20 +1,29 @@
 # 发现与决策
 
 ## 需求
+- v1.0.1 用户反馈包含七项：发布包不自动携带 `LICENSES/` 第三方许可证目录；README 列出参考开源项目并提供中文 README 链接；字幕区域增高且可拖动、列宽可调；错误/警告中文化；时间线滚轮缩放；报告未启用时折叠其选项；去除重复序号；边界表格仅显示章节而下拉选项显示章节与时间。
+- 用户明确要求完成后发布 `v1.0.1`，Release notes 必须总结实际 Changelog，不能只有 `Full Changelog` 链接。
 - 任务书 9.3 要求每个源字幕可查看文件名、格式、编码、事件数、样式数、最早开始、原始/有效结束、PlayRes、字体/图形附件、Aegisub Extradata 与警告数量；19.3 要求播放列表双击查看结构；19.5 要求输出区域显示完整路径、编码、冲突策略、备份、输出格式、预计事件/样式数量和警告摘要。
 - 工具面向 Windows 11，输入 BDMV/PLAYLIST/MPLS/index.bdmv，输出外置 ASS/SSA/SRT/SUP。
 - 任务书要求自动播放列表推荐、分集字幕映射、可视化时间线、多输出目标、项目复现和 CLI。
 - UI 默认简体中文并支持英文，耗时任务必须在后台运行。
-- 用户最新规则禁止本机依赖安装、测试、Ruff、Mypy、构建、打包及项目代码执行；全部可执行验证仅通过 GitHub Actions 完成。
-- 当前仓库 `AGENTS.md` 和用户最新指令优先于旧 Goal、会话摘要或历史记录；本机仅允许源码检查、静态文本搜索、Git 和 `git diff --check` 等非执行检查。
+- 用户最新规则允许本机安装 Python 包并执行 Python 测试、Ruff、Mypy、构建和打包，所有本机 Python 命令固定使用 `py -3.12`。
+- 当前仓库 `AGENTS.md` 和用户最新指令优先于旧 Goal、会话摘要或历史记录；只有需要新增非 Python 环境的验证才转交 GitHub Actions，最终推送提交仍按精确 SHA 审计。
 - Git/GitHub 必须直接使用本机已有 SSH 与 `gh` 凭据；禁止转入浏览器登录或另建认证路径。
 - 本轮实时验证确认 Hanam 本机 SSH 凭据已将 `YuSaZh/BDSubMerge` 远端 `main` 推送至 `e404ede4b66a36318eec44f6405c5a4e3a9720e5`；`gh` 的独立缓存 token 对 artifact 下载失效，不能据此误判 Git SSH 凭据不可用。
 
 ## 研究发现
+- 2026-08-13 v1.0.1 发布前首次 SSH 连接曾返回 `Permission denied (publickey)`，但同一上下文复测立即成功：`ssh -T` 认证为 `YuSaZh`，`gh auth status` 显示活动账号和 SSH Git 协议，`git ls-remote` 读取远端 `main=288524a4...`。因此现有 key 与配置有效，首次拒绝属于瞬时认证失败，不能推断为 key 已从 GitHub 移除。
+- 用户截图显示字幕表左侧 Qt vertical header 已显示 1/2/3，同时模型内“序号”列再次显示 1/2/3，属于重复信息；应保留一个序号来源。
+- 用户截图显示字幕映射表默认只露出约两行，长字幕文件名被省略；应提高默认高度、使用可拖动 splitter，并保留列头拖动与完整文件名 tooltip。
+- 用户截图显示“写入合并报告”未勾选时，报告格式、路径和冲突策略仍以 disabled 控件占据三行；应采用渐进披露，在关闭时隐藏整个报告配置容器。
+- 字幕表当前将所有列设为 `ResizeToContents` 后又把文件名列设为 `Stretch`，会覆盖用户拖动后的宽度；改为可交互列宽，并只提供合理初始宽度和完整路径 tooltip。
+- 时间线目前始终把完整播放列表时长映射到视口，没有可见范围状态；滚轮缩放应只改变 Qt UI 内的整数 tick 可见区间，并保持鼠标所在 tick 为缩放锚点。
+- Windows 发布工作流当前显式复制 `THIRD_PARTY_NOTICES.md`、仓库 `licenses/*`，并从已安装分发中收集大量许可证到 `LICENSES/`；用户要求 v1.0.1 ZIP 仅保留本项目 `LICENSE`，因此需同步移除收集步骤与对应包内容门禁。
 - 最新工作树已将 `ProjectRestoreApplicationService` 从应用包导出，并在 CLI `_prepare_project()` 与 GUI 后台项目恢复任务中调用；早期“尚未接入”的记录已过时。当前证据缺口转为完整服务级回归、UI 两阶段提交细节和旧 CLI 测试替身兼容性。
-- 2026-08-13 用户随后收紧规则：即使本机已有 Python 3.12 环境，也不得执行依赖安装、测试、Ruff、Mypy、构建或打包，全部交给 GitHub Actions。
+- 2026-08-13 用户最终纠正规则：本机可使用 `py -3.12` 安装 Python 包并执行测试、Ruff、Mypy、构建和打包；此前“全部交给 GitHub Actions”的描述已失效。
 - `ProjectRestoreApplicationService` 已覆盖扫描身份、字幕加载、保存边界/映射锁、输出目标、冲突策略和映射复现检查，并成为 CLI/GUI 唯一恢复入口；GUI 从多回调状态变更改为成功后单次提交。
-- 本机虽已有 Python 3.12 项目工具，但按最新仓库规则不得用于当前验证。
+- 本机已有的 Python 3.12 项目工具可用于当前验证；不在本机新增非 Python 环境。
 - `e404ede4b66a36318eec44f6405c5a4e3a9720e5` / run `31694449905` 已全绿：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows SMB/UNC 生命周期和 Ubuntu 四态截图矩阵全部成功；四个 artifacts 存在且未过期。当前 `gh` token 下载 artifact ZIP 返回 401，因此本轮无法重复人工目视截图，不能把矩阵成功夸大为新一轮人工视觉审查。
 - `e5abdf4cbd857d93c94c3df85c63b13ab66006eb` / run `31694994062` 也已全绿：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows SMB/UNC 生命周期、Ubuntu 四态截图矩阵和 artifacts 上传全部成功，成为当前精确 SHA 绿色基线。
 - 用户已通过 GitHub CLI 官方设备流程刷新 Hanam 本机 keyring 凭据；本机用户上下文中的 `gh` 现拥有完整申请 scope 集，对 `YuSaZh/BDSubMerge` 具有 admin/maintain/push 权限，Actions 与 Release API 均已验证可用。默认沙箱仍看见旧 token，因此后续 `gh` API 审计必须显式使用本机用户凭据上下文；Git 传输继续使用 SSH。
@@ -64,7 +73,7 @@
 - UI 截图必须作为独立 artifact 使用精确 PNG 路径和 `if-no-files-found: error`；上传整个已有 JUnit/coverage 的 `reports/` 目录不能证明截图存在。Ubuntu 截图还需显式安装 CJK 字体，避免中文界面依赖 runner 的偶然字体集合。
 - commit `38c3d78` 的 run `31672669445` 已完成远程闭环：Ubuntu 230 passed、2 skipped、82.93%，Windows 232 passed、82.92% 且真实 SMB/UNC 通过；四态截图 artifact `9170299987` 的文件哈希与日志一致，人工审计无重叠、截断或 CJK 缺字。
 - 当前工作树在绿色基线之后已有实际进度回调、字幕发现/加载应用服务和 UI 任务桥接的未提交源码；这些改动尚无对应测试提交或 Actions run，必须作为独立在研批次审计，不能视为已验证功能。
-- 当前 goal 已处于 active；执行边界以仓库级 `AGENTS.md` 为准，全部可执行验证、跨平台检查和最终精确 SHA 审计均由 GitHub Actions 完成。
+- 当前 goal 已处于 active；执行边界以仓库级 `AGENTS.md` 为准，本机执行 Python 3.12 验证，需要新增非 Python 环境的检查及最终精确 SHA 审计由 GitHub Actions 完成。
 - 2026-08-13 再次实测本机凭据：显式使用 `C:\Users\Hanam\.ssh\config` 与 `known_hosts` 可读取 `git@github.com:YuSaZh/BDSubMerge.git`；`gh auth status` 显示活动账号 `YuSaZh`、SSH Git 协议和 `repo` scope。沙箱内不能直接读取用户 SSH 配置，外部 Git 对沙箱所有权仓库需使用单次 `safe.directory`，两者都不需要更改全局 Git 或网页登录。
 - 当前未提交实现已让 `ServiceTask` 透传嵌套进度，并让 GUI 显示详情；但应用层目前只有字幕发现/加载报告中间进度，扫描、预检、合并等长任务是否有足够的阶段与详情仍需逐一审计。
 - 当前未提交批次还把目录拖放的字幕发现移入应用服务，并新增项目扫描失败处理；现有 `tests/` 尚无对应未提交变化，必须补足服务、取消、进度和 GUI 回归测试后才能推送验证。

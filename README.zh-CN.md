@@ -1,10 +1,12 @@
 # BDSubMerge
 
+[English](README.md)
+
 BDSubMerge 是一款 Windows 优先的 BDMV 原盘字幕合并工具。它只读取 BDMV 元数据，
 将按集排列的 ASS、SSA、SRT 或 Blu-ray PGS SUP 字幕映射到 MPLS 播放时间线，并通过
 预检和事务写入生成外挂字幕。
 
-> 当前状态：`v1.0.0` 已发布。发布提交已通过 CI、Windows 打包、哈希、许可证、
+> 当前状态：`v1.0.1` 已发布。其精确提交已通过 CI、Windows 打包、哈希、
 > 无 Python 启动和最终包界面证据门禁。
 
 ## 已实现能力
@@ -20,8 +22,8 @@ BDSubMerge 是一款 Windows 优先的 BDMV 原盘字幕合并工具。它只读
 
 ## 快速开始
 
-从 [`v1.0.0` Release](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.0) 下载
-`BDSubMerge-1.0.0-windows-x64.zip` 和对应 SHA-256 文件。校验哈希后完整解压并运行
+从 [`v1.0.1` Release](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.1) 下载
+`BDSubMerge-1.0.1-windows-x64.zip` 和对应 SHA-256 文件。校验哈希后完整解压并运行
 `BDSubMerge.exe`；不要移动或删除同目录中的 `_internal` 文件夹。
 
 已安装环境中的 CLI 示例：
@@ -56,13 +58,25 @@ bdsubmerge merge "D:\Projects\Title.bdsm.json" --json
 
 ## 开发与验证
 
-目标环境为 Python 3.12。依赖安装、测试、lint、类型检查、构建和打包全部只在
-GitHub Actions 执行。本机仅允许源码阅读、静态文本搜索、Git 操作及
-`git diff --check` 等不执行代码的检查；每次推送都按精确提交 SHA 审计。架构见
+目标环境为 Python 3.12。本机 Python 命令统一使用 `py -3.12`，允许安装 Python
+依赖并执行测试、Ruff、Mypy、构建和打包；需要新增非 Python 环境的验证交给
+GitHub Actions。每次推送都按精确提交 SHA 审计。架构见
 [docs/architecture.md](docs/architecture.md)，时间基准见
 [docs/adr/0001-media-timebase.md](docs/adr/0001-media-timebase.md)，变更记录见
 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可证
 
-项目采用 MIT 许可证，第三方组件声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+项目采用 [MIT 许可证](LICENSE)。发布 ZIP 只包含本项目的 `LICENSE`；仓库仍保留依赖
+声明供源码审计。
+
+BDSubMerge 使用或参考了以下开源项目：
+
+- [Shinya](https://github.com/shimamura-hougetsu/shinya)：MPLS 解析；
+- [pysubs2](https://github.com/tkarabela/pysubs2)：声明的文本字幕依赖；
+- [PySide6 / Qt for Python](https://doc.qt.io/qtforpython-6/)：桌面界面；
+- [lxml](https://lxml.de/)：Shinya 的传递依赖；
+- [PyInstaller](https://pyinstaller.org/)：Windows 打包；
+- [BluraySubtitle](https://github.com/Haruite/BluraySubtitle)：仅作功能设计参考，未复制源码。
+
+精确版本和扩展说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

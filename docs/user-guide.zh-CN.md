@@ -174,9 +174,10 @@ JSON 顶层格式固定为：
 
 GitHub 的 **Package Windows** workflow 在 `BDSubMerge-windows-x64` artifact 中生成
 `BDSubMerge-<version>-windows-x64.zip` 和对应 SHA-256 文件。校验哈希后完整解压
-onedir 包，并保持 `_internal`、`LICENSE`、`LICENSES` 和 `THIRD_PARTY_NOTICES.md` 与程序
-目录结构不变。workflow 会清除 Python 环境变量，从含中文和空格的路径启动最终 ZIP
-进行烟测，还会校验内嵌版本，并由最终 EXE 生成中文浅色和英文深色截图证据。
+onedir 包，并保持 `_internal` 和本项目的 `LICENSE` 与程序目录结构不变。依赖与参考项目
+在仓库 README 中列明，不再重复打入发布 ZIP。workflow 会清除 Python 环境变量，从含
+中文和空格的路径启动最终 ZIP 进行烟测，还会校验内嵌版本，并由最终 EXE 生成中文浅色
+和英文深色截图证据。
 
 对应 GitHub Release 发布前，Actions artifact 属于发布候选。Windows CI 会创建隔离的
 临时 SMB 共享，并在真实 UNC 路径上验证扫描、预检和原子写入；商业原盘夹具广度和
@@ -188,8 +189,8 @@ onedir 包，并保持 `_internal`、`LICENSE`、`LICENSES` 和 `THIRD_PARTY_NOT
 - 不静默覆盖，写入前必须显示并预检完整目标；
 - 除非用户主动启用未来的调试功能，否则不记录字幕正文；
 - 不包含遥测、网络上传、在线字幕下载或自动更新；
-- 依赖安装、测试、lint、类型检查、构建和打包必须全部在 GitHub Actions 执行；本机
-  仅允许源码阅读、静态文本搜索、Git 操作及 `git diff --check` 等不执行代码的检查。
-  每个推送候选都要按精确提交 SHA 审计。
+- 本机 Python 命令统一使用 `py -3.12`，允许安装 Python 依赖并执行测试、Ruff、Mypy、
+  构建和打包；需要新增非 Python 环境的验证交给 GitHub Actions。每个推送候选都要按
+  精确提交 SHA 审计。
 
 当前真实验证缺口是实际 MPLS/SUP fixture 覆盖广度和干净的 Windows 10/11 桌面。

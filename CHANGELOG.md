@@ -4,6 +4,29 @@ All notable changes to BDSubMerge are recorded here.
 
 ## Unreleased
 
+## 1.0.1 - 2026-08-13
+
+### Added
+
+- Mouse-wheel timeline zoom from 100% to approximately 890%, anchored at the pointer and shown
+  beside the time display selector.
+- Simplified Chinese descriptions for GUI errors and warnings while retaining stable codes and
+  original technical details.
+
+### Changed
+
+- Replaced the fixed workspace stack with a persistent vertical splitter. The episode subtitle
+  table now starts about twice as tall, supports manually resized columns, and exposes full source
+  paths in tooltips.
+- Hid the duplicate Qt row-number header while retaining the explicit sequence column.
+- Collapsed merge-report settings when report output is disabled.
+- Boundary cells now show chapter IDs only; opening a boundary list still shows chapter IDs with
+  formatted times.
+- Windows release archives now include only BDSubMerge's `LICENSE`; dependency and reference
+  attribution is listed in both READMEs and retained in the source repository.
+- GitHub Release creation now uses versioned, content-rich release notes instead of relying on an
+  automatically generated changelog link.
+
 ## 1.0.0 - 2026-08-13
 
 ### Added

@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
 from pytestqt.qtbot import QtBot
 
 from bdsubmerge.domain.models import PlaylistInfo
@@ -181,3 +182,35 @@ def test_invalid_episode_handle_move_rolls_back_without_orphan_boundary(
     assert timeline.user_boundaries == ()
     assert moved == []
     assert added == []
+
+
+def test_mouse_wheel_zooms_timeline_without_modifier(qtbot: QtBot) -> None:
+    timeline = TimelineView()
+    timeline.resize(800, 200)
+    qtbot.addWidget(timeline)
+    timeline.show()
+    timeline.show_playlist(
+        _playlist(), item_label="Item", chapter_label="Chapter", empty_text="Empty"
+    )
+    zoom_levels: list[int] = []
+    timeline.zoom_changed.connect(zoom_levels.append)
+    initial_scale = timeline.transform().m11()
+    initial_vertical_scale = timeline.transform().m22()
+
+    event = QWheelEvent(
+        QPointF(400, 100),
+        QPointF(400, 100),
+        QPoint(),
+        QPoint(0, 120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.ScrollUpdate,
+        False,
+    )
+    timeline.wheelEvent(event)
+
+    assert event.isAccepted()
+    assert timeline.transform().m11() > initial_scale
+    assert timeline.transform().m22() == initial_vertical_scale
+    assert timeline.zoom_percent == 120
+    assert zoom_levels == [120]

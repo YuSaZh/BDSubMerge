@@ -188,7 +188,8 @@ Exit codes:
 The **Package Windows** GitHub workflow produces
 `BDSubMerge-<version>-windows-x64.zip` and its SHA-256 file in the
 `BDSubMerge-windows-x64` artifact. Verify the checksum, extract the complete onedir package,
-and keep `_internal`, `LICENSE`, `LICENSES`, and `THIRD_PARTY_NOTICES.md` beside the executable.
+and keep `_internal` and this project's `LICENSE` beside the executable. Dependency references
+remain documented in the repository README and are not duplicated into the release archive.
 The workflow smoke-tests the final ZIP from a Chinese and space-containing path with Python
 environment variables removed. It also verifies the embedded version and captures distinct
 Chinese/light and English/dark screenshots from the packaged executable.
@@ -204,9 +205,8 @@ separate validation concerns.
 - Never silently overwrite output; display and preflight the full destination.
 - Do not log subtitle body text unless explicit debugging is added by the user.
 - No telemetry, network upload, online subtitle download, or automatic update is present.
-- Dependency installation, tests, lint, type checks, builds, and packaging must run exclusively
-  in GitHub Actions. Local work is limited to source inspection, static text searches, Git
-  operations, and non-executing checks such as `git diff --check`. Audit each pushed candidate by
-  exact commit SHA.
+- Use `py -3.12` for local Python commands. Local Python dependency installation, tests, Ruff,
+  Mypy, builds, and packaging are allowed. Run validation that requires adding a non-Python
+  environment in GitHub Actions. Audit each pushed candidate by exact commit SHA.
 
 Known validation gaps are real-world MPLS/SUP fixture breadth and a clean Windows 10/11 desktop.

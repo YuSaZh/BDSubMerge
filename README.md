@@ -1,12 +1,14 @@
 # BDSubMerge
 
+[简体中文](README.zh-CN.md)
+
 BDSubMerge is a Windows-first tool for rebuilding ordered episode subtitles on a Blu-ray
 MPLS timeline. It reads BDMV metadata without modifying the disc, maps ASS/SSA/SRT or
 Blu-ray PGS SUP sources to playlist intervals, and writes external subtitles through
 preflighted, transactional output targets.
 
-> Status: `v1.0.0` is released. The release commit passed CI, Windows packaging, checksum,
-> license, no-Python startup, and packaged-UI evidence gates.
+> Status: `v1.0.1` is released. Its exact commit passed CI, Windows packaging, checksum,
+> no-Python startup, and packaged-UI evidence gates.
 
 ## What It Does
 
@@ -22,8 +24,8 @@ preflighted, transactional output targets.
 
 ## Quick Start
 
-Download `BDSubMerge-1.0.0-windows-x64.zip` and its SHA-256 file from the
-[`v1.0.0` release](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.0). Verify the
+Download `BDSubMerge-1.0.1-windows-x64.zip` and its SHA-256 file from the
+[`v1.0.1` release](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.1). Verify the
 checksum, extract the archive completely, and start `BDSubMerge.exe`. Keep the `_internal`
 directory beside the executable.
 
@@ -63,13 +65,26 @@ See the [Chinese README](README.zh-CN.md) and
 
 ## Development
 
-The target is Python 3.12. Dependency installation, tests, linters, type checks, builds, and
-packaging run exclusively in GitHub Actions. Local work is limited to source inspection, static
-text searches, Git operations, and non-executing checks such as `git diff --check`. Every pushed
-candidate is audited against its exact commit SHA. See [architecture](docs/architecture.md),
+The target is Python 3.12. Use `py -3.12` for local Python commands; local Python dependency
+installation, tests, Ruff, Mypy, builds, and packaging are supported. Validation that requires a
+new non-Python environment runs in GitHub Actions. Every pushed candidate is audited against its
+exact commit SHA. See [architecture](docs/architecture.md),
 [timebase ADR](docs/adr/0001-media-timebase.md), and [changelog](CHANGELOG.md).
 
 ## License
 
-BDSubMerge is licensed under the MIT License. Third-party attribution is in
+BDSubMerge is licensed under the [MIT License](LICENSE). The release archive includes only
+this project's `LICENSE`; the repository retains detailed dependency notices for source audits.
+
+BDSubMerge uses or references these open-source projects:
+
+- [Shinya](https://github.com/shimamura-hougetsu/shinya) for MPLS parsing.
+- [pysubs2](https://github.com/tkarabela/pysubs2) as the declared text-subtitle dependency.
+- [PySide6 / Qt for Python](https://doc.qt.io/qtforpython-6/) for the desktop interface.
+- [lxml](https://lxml.de/) through Shinya, and
+  [PyInstaller](https://pyinstaller.org/) for the Windows build.
+- [BluraySubtitle](https://github.com/Haruite/BluraySubtitle) as a functional reference only;
+  no source code was copied.
+
+Exact versions and extended notices are recorded in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

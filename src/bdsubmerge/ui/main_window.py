@@ -346,6 +346,8 @@ class MainWindow(QMainWindow):
         timeline_header = QHBoxLayout()
         timeline_header.addWidget(self.timeline_title)
         timeline_header.addStretch()
+        self.timeline_zoom = QLabel()
+        timeline_header.addWidget(self.timeline_zoom)
         timeline_header.addWidget(self.timeline_format)
         self.timeline = TimelineView()
         self.timeline.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -354,7 +356,8 @@ class MainWindow(QMainWindow):
         upper.addWidget(playlist_widget)
         upper.addWidget(timeline_widget)
         upper.setSizes([430, 650])
-        root.addWidget(upper, 2)
+        self.workspace_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.workspace_splitter.addWidget(upper)
 
         self.subtitle_group = QGroupBox()
         subtitle_layout = QVBoxLayout(self.subtitle_group)
@@ -390,15 +393,19 @@ class MainWindow(QMainWindow):
         self.mapping_table.setDragDropOverwriteMode(False)
         self.mapping_table.setDefaultDropAction(Qt.DropAction.CopyAction)
         self.mapping_table.setDropIndicatorShown(True)
+        self.mapping_table.verticalHeader().setVisible(False)
         self.mapping_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+            QHeaderView.ResizeMode.Interactive
         )
-        self.mapping_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
+        self.mapping_table.horizontalHeader().setMinimumSectionSize(54)
+        for column, width in enumerate(
+            (58, 480, 70, 120, 150, 150, 120, 90, 90, 90, 160)
+        ):
+            self.mapping_table.setColumnWidth(column, width)
+        self.mapping_table.setMinimumHeight(190)
         subtitle_layout.addLayout(subtitle_toolbar)
         subtitle_layout.addWidget(self.mapping_table)
-        root.addWidget(self.subtitle_group, 2)
+        self.workspace_splitter.addWidget(self.subtitle_group)
 
         self.output_group = QGroupBox()
         output_layout = QHBoxLayout(self.output_group)
@@ -466,8 +473,10 @@ class MainWindow(QMainWindow):
         output_editor.addWidget(self.output_targets_table)
         output_editor.addLayout(output_target_actions)
 
-        report_form = QFormLayout()
         self.report_enabled = QCheckBox()
+        self.report_configuration = QWidget()
+        report_form = QFormLayout(self.report_configuration)
+        report_form.setContentsMargins(0, 0, 0, 0)
         self.report_format = QComboBox()
         self.report_path = QLineEdit()
         self.report_path.setClearButtonEnabled(True)
@@ -479,11 +488,11 @@ class MainWindow(QMainWindow):
         self.report_format_label = QLabel()
         self.report_path_label = QLabel()
         self.report_collision_label = QLabel()
-        report_form.addRow(self.report_enabled)
         report_form.addRow(self.report_format_label, self.report_format)
         report_form.addRow(self.report_path_label, report_path_layout)
         report_form.addRow(self.report_collision_label, self.report_collision_policy)
-        output_editor.addLayout(report_form)
+        output_editor.addWidget(self.report_enabled)
+        output_editor.addWidget(self.report_configuration)
         output_layout.addLayout(output_editor, 3)
         preflight_column = QVBoxLayout()
         self.preflight_title = QLabel()
@@ -493,7 +502,13 @@ class MainWindow(QMainWindow):
         preflight_column.addWidget(self.preflight_title)
         preflight_column.addWidget(self.preflight_summary)
         output_layout.addLayout(preflight_column, 2)
-        root.addWidget(self.output_group)
+        self.workspace_splitter.addWidget(self.output_group)
+        self.workspace_splitter.setChildrenCollapsible(False)
+        self.workspace_splitter.setStretchFactor(0, 2)
+        self.workspace_splitter.setStretchFactor(1, 3)
+        self.workspace_splitter.setStretchFactor(2, 3)
+        self.workspace_splitter.setSizes([250, 330, 300])
+        root.addWidget(self.workspace_splitter, 1)
 
         self.advanced_toggle = QToolButton()
         self.advanced_toggle.setCheckable(True)
@@ -657,6 +672,7 @@ class MainWindow(QMainWindow):
         self.timeline.user_boundary_deleted.connect(self._user_boundary_deleted)
         self.timeline.episode_selected.connect(self.select_mapping_row_from_timeline)
         self.timeline.episode_boundary_moved.connect(self.move_episode_boundary)
+        self.timeline.zoom_changed.connect(self._timeline_zoom_changed)
         self.mapping_preflight_timer.timeout.connect(self.start_preflight)
         self.playlist_table.customContextMenuRequested.connect(self.show_playlist_context_menu)
         self.mapping_table.customContextMenuRequested.connect(self.show_subtitle_context_menu)
@@ -686,6 +702,7 @@ class MainWindow(QMainWindow):
             ]
         )
         self.timeline_title.setText(tr("timeline.title"))
+        self._timeline_zoom_changed(self.timeline.zoom_percent)
         self._reset_combo(
             self.timeline_format,
             (
@@ -1733,7 +1750,7 @@ class MainWindow(QMainWindow):
                 self.translations.text(
                     "mapping.locked" if mapping.locked else "mapping.ready"
                 ),
-                "; ".join(mapping.warnings),
+                self._localized_mapping_warnings(mapping.warnings),
             )
             for column, text in zip(range(4, 11), values, strict=True):
                 cell = self.mapping_table.item(row, column)
@@ -2017,6 +2034,8 @@ class MainWindow(QMainWindow):
             for column, text in enumerate(values):
                 item = QTableWidgetItem(text)
                 item.setData(Qt.ItemDataRole.UserRole, str(asset.path))
+                if column == 1:
+                    item.setToolTip(str(asset.path))
                 self.mapping_table.setItem(row, column, item)
 
     @Slot()
@@ -2349,7 +2368,9 @@ class MainWindow(QMainWindow):
         self._invalidate_preflight()
 
     def _update_report_controls(self) -> None:
-        enabled = self.active_task is None and self.report_enabled.isChecked()
+        checked = self.report_enabled.isChecked()
+        self.report_configuration.setVisible(checked)
+        enabled = self.active_task is None and checked
         for widget in (
             self.report_format,
             self.report_path,
@@ -2752,6 +2773,10 @@ class MainWindow(QMainWindow):
             (5, "end", end_boundary_id),
         ):
             combo = QComboBox(self.mapping_table)
+            combo.setEditable(True)
+            line_edit = combo.lineEdit()
+            if line_edit is not None:
+                line_edit.setReadOnly(True)
             for item in sorted(boundaries, key=lambda value: (int(value.time_90k), value.id)):
                 label = format_media_time(
                     int(item.time_90k),
@@ -2764,6 +2789,7 @@ class MainWindow(QMainWindow):
             if combo.findData(current_id) < 0:
                 combo.addItem(current_id, current_id)
             combo.setCurrentIndex(combo.findData(current_id))
+            combo.setEditText(current_id)
             combo.currentIndexChanged.connect(
                 lambda _index, eid=episode_id, changed_edge=edge, widget=combo: (
                     self._mapping_boundary_combo_changed(eid, changed_edge, widget)
@@ -2796,6 +2822,7 @@ class MainWindow(QMainWindow):
         boundary_id = combo.currentData()
         if boundary_id is None or self.active_task is not None:
             return
+        combo.setEditText(str(boundary_id))
         self._apply_mapping_boundary(episode_id, edge, str(boundary_id))
 
     @Slot(str, str, int, str)
@@ -3025,9 +3052,7 @@ class MainWindow(QMainWindow):
                     ),
                 )
             )
-        lines.extend(
-            f"[{issue.severity.value}] {issue.code}: {issue.message}" for issue in prepared.issues
-        )
+        lines.extend(self._format_issue(issue) for issue in prepared.issues)
         if prepared.ready:
             lines.insert(0, self.translations.text("preflight.ready"))
         self.preflight_summary.setPlainText("\n".join(lines))
@@ -3058,7 +3083,7 @@ class MainWindow(QMainWindow):
                 f"{int(mapping.manual_offset_90k) // 90} ms",
                 mapping.confidence.value,
                 self.translations.text("mapping.locked" if mapping.locked else "mapping.ready"),
-                "; ".join(mapping.warnings),
+                self._localized_mapping_warnings(mapping.warnings),
             )
             for column, text in zip(range(4, 11), values, strict=True):
                 item = self.mapping_table.item(row, column)
@@ -3101,7 +3126,9 @@ class MainWindow(QMainWindow):
         dialog.setText(
             self.translations.text("confirm.warnings.message", count=len(warnings))
         )
-        dialog.setInformativeText("\n".join(f"- {issue.message}" for issue in warnings))
+        dialog.setInformativeText(
+            "\n".join(f"- {self._issue_message(issue)}" for issue in warnings)
+        )
         dialog.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
@@ -3232,10 +3259,40 @@ class MainWindow(QMainWindow):
 
     def _record_issues(self, issues: tuple[ApplicationIssue, ...]) -> None:
         for issue in issues:
-            self._record_error(
-                f"[{issue.severity.value}] {issue.code}: {issue.message}"
-                + (f" ({issue.source})" if issue.source else "")
-            )
+            self._record_error(self._format_issue(issue))
+
+    def _format_issue(self, issue: ApplicationIssue) -> str:
+        severity = self.translations.text(f"severity.{issue.severity.value}")
+        return (
+            f"[{severity}] {issue.code}: {self._issue_message(issue)}"
+            + (f" ({issue.source})" if issue.source else "")
+        )
+
+    def _issue_message(self, issue: ApplicationIssue) -> str:
+        if self.translations.locale != "zh_CN":
+            return issue.message
+        key = f"issue.{issue.code}"
+        localized = self.translations.text(key)
+        if localized == key and issue.code.startswith("output_"):
+            fallback_key = f"issue.{issue.code.removeprefix('output_')}"
+            localized = self.translations.text(fallback_key)
+        if localized.startswith("issue."):
+            return issue.message
+        if localized == issue.message:
+            return localized
+        return f"{localized} (原始信息: {issue.message})"
+
+    def _localized_mapping_warnings(self, warnings: tuple[str, ...]) -> str:
+        keys = {
+            "subtitle duration is estimated": "mapping.warning_duration_estimated",
+            "automatic mapping requires explicit confirmation": (
+                "mapping.warning_confirmation_required"
+            ),
+        }
+        return "; ".join(
+            self.translations.text(keys[warning]) if warning in keys else warning
+            for warning in warnings
+        )
 
     def _record_error(self, message: str) -> None:
         self.error_details.append(message)
@@ -3257,6 +3314,12 @@ class MainWindow(QMainWindow):
         self.timeline.set_episodes(
             self._timeline_episodes(),
             selected_episode_id=selected_episode_id,
+        )
+
+    @Slot(int)
+    def _timeline_zoom_changed(self, percent: int) -> None:
+        self.timeline_zoom.setText(
+            self.translations.text("timeline.zoom", percent=percent)
         )
         self.timeline.setToolTip(self.translations.text("timeline.boundary_add"))
 
@@ -3481,6 +3544,9 @@ class MainWindow(QMainWindow):
         geometry = self.settings.value("ui/geometry")
         if isinstance(geometry, QByteArray):
             self.restoreGeometry(geometry)
+        splitter_state = self.settings.value("ui/workspace_splitter")
+        if isinstance(splitter_state, QByteArray):
+            self.workspace_splitter.restoreState(splitter_state)
         self.path_edit.setText(str(self.settings.value("recent/bdmv", "")))
         output_mode = str(self.settings.value("output/mode", "jriver"))
         self.output_mode.setProperty("restoredMode", output_mode)
@@ -3495,6 +3561,9 @@ class MainWindow(QMainWindow):
         if self.cancellation is not None:
             self.cancellation.cancel()
         self.settings.setValue("ui/geometry", self.saveGeometry())
+        self.settings.setValue(
+            "ui/workspace_splitter", self.workspace_splitter.saveState()
+        )
         self.settings.setValue("ui/language", self.translations.locale)
         self.settings.setValue("output/mode", self.output_mode.currentData())
         super().closeEvent(event)
