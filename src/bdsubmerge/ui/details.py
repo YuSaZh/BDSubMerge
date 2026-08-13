@@ -175,9 +175,9 @@ def format_playlist_details(
                 clip=clip,
                 start=start,
                 end=end,
-                condition=condition,
+                angle=selected_angle,
             )
-            for clip, start, end, condition in details.timeline_fingerprint
+            for clip, start, end, selected_angle in details.timeline_fingerprint
         )
     else:
         lines.append(f"  {tr('common.none')}")

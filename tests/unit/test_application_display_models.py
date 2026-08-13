@@ -98,6 +98,7 @@ def test_playlist_structure_projects_complete_read_only_parse_information() -> N
     assert "Duration: 00:00:03.000 (270000 ticks)" in rendered
     assert "pid=4608 language=jpn coding_type=144" in rendered
     assert "[0] type=1 play_item=1" in rendered
+    assert "00001: 45000..135000, angle=5" in rendered
     assert "missing CLPI reference" in rendered
 
 

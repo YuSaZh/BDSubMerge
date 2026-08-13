@@ -163,7 +163,7 @@
   "details.marks": "Marks ({count})",
   "details.mark": "[{index}] type={mark_type} PlayItem={play_item} source (45 kHz)={source} time={time} PID={pid} duration (45 kHz)={duration}",
   "details.timeline_fingerprint": "Timeline fingerprint ({count})",
-  "details.timeline_fingerprint_item": "  {clip}: {start}..{end}, connection={condition}",
+  "details.timeline_fingerprint_item": "  {clip}: {start}..{end}, selected angle={angle}",
   "details.warnings": "Warnings ({count})",
   "details.errors": "Errors ({count})",
   "details.filename": "File name",

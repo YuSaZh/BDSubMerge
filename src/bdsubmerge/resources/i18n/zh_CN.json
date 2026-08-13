@@ -163,7 +163,7 @@
   "details.marks": "章节标记（{count}）",
   "details.mark": "[{index}] 类型={mark_type} PlayItem={play_item} 源时间（45 kHz）={source} 时间={time} PID={pid} 时长（45 kHz）={duration}",
   "details.timeline_fingerprint": "时间线指纹（{count}）",
-  "details.timeline_fingerprint_item": "  {clip}: {start}..{end}，连接条件={condition}",
+  "details.timeline_fingerprint_item": "  {clip}: {start}..{end}，选中角度={angle}",
   "details.warnings": "警告（{count}）",
   "details.errors": "错误（{count}）",
   "details.filename": "文件名",

@@ -61,11 +61,11 @@ def test_playlist_details_render_complete_projection_in_chinese() -> None:
     assert "片段=00010" in rendered
     assert "多角度=是" in rendered
     assert "PID=4608 语言=jpn" in rendered
-    assert "章节标记（1）" in rendered
-    assert "源时间（45 kHz）=67500" in rendered
-    assert "时长（45 kHz）=4500" in rendered
-    assert "时间线指纹（1）" in rendered
-    assert "00010: 45000..135000，连接条件=5" in rendered
+    assert "章节标记（1）" in rendered  # noqa: RUF001
+    assert "源时间（45 kHz）=67500" in rendered  # noqa: RUF001
+    assert "时长（45 kHz）=4500" in rendered  # noqa: RUF001
+    assert "时间线指纹（1）" in rendered  # noqa: RUF001
+    assert "00010: 45000..135000，选中角度=5" in rendered  # noqa: RUF001
     assert "时长超过正片阈值" in rendered
     assert "重复片段引用使推荐分降低 7" in rendered
     assert "PlayItem 0 缺少 CLIPINF/00010.clpi" in rendered
@@ -107,8 +107,8 @@ def test_subtitle_details_render_attachments_sections_and_pgs_segments() -> None
     assert "文件名: episode.sup" in rendered
     assert "编码: 未知" in rendered
     assert "最早开始时间: 未知" in rendered
-    assert "字体附件（1）\n  - body.ttf" in rendered
-    assert "Aegisub Extradata: 是（1 条）" in rendered
+    assert "字体附件（1）\n  - body.ttf" in rendered  # noqa: RUF001
+    assert "Aegisub Extradata: 是（1 条）" in rendered  # noqa: RUF001
     assert "0x16 呈现合成：3 个包" in rendered
     assert "0x99 未知：1 个包" in rendered
-    assert "警告（1）" in rendered
+    assert "警告（1）" in rendered  # noqa: RUF001

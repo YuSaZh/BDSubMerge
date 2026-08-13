@@ -314,8 +314,8 @@ def format_playlist_structure(details: PlaylistStructureDisplay) -> str:
     if not details.marks:
         lines.append("  (none)")
     lines.append(f"Timeline fingerprint ({len(details.timeline_fingerprint)}):")
-    for clip_id, in_time, out_time, connection in details.timeline_fingerprint:
-        lines.append(f"  {clip_id}: {in_time}..{out_time}, connection={connection}")
+    for clip_id, in_time, out_time, selected_angle in details.timeline_fingerprint:
+        lines.append(f"  {clip_id}: {in_time}..{out_time}, angle={selected_angle}")
     if not details.timeline_fingerprint:
         lines.append("  (none)")
     lines.append("Warnings:")
