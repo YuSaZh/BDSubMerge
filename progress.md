@@ -3,7 +3,7 @@
 ## 会话：2026-08-13
 
 ### GUI 项目源重定位批次
-- **状态：** in_progress
+- **状态：** complete
 - 已按实时 Goal 和用户最终指令恢复仓库通用规则与三份持久计划：本机固定使用 `py -3.12`，允许 Python 依赖安装与质量/构建/打包验证；需新增非 Python 环境的内容交给 GitHub Actions，GitHub 操作使用本机 SSH/`gh` 凭据且禁止浏览器登录。
 - 本机完整 pytest 首轮收集发现新增 `tests/ui/test_project_relocation.py` 与既有 `tests/unit/test_project_relocation.py` 同名，pytest 将二者导入为同一顶层模块而中断；保留独立 UI 对话框覆盖并重命名为 `test_project_relocation_dialog.py` 后解决。
 - 最终 Python 3.12 coverage 通过：排除两个明确依赖 Windows SMB/UNC 环境且由 CI 临时 share 覆盖的节点后，`320 passed, 2 deselected`，总覆盖率 `84.41%`，高于 80% 门槛。
@@ -12,29 +12,30 @@
 - PyInstaller 6.22.0 / Python 3.12.10 已按 Windows workflow 的 onedir 参数成功打包；EXE 与双语资源存在，在清空 Python/虚拟环境变量、PATH 仅保留系统目录的条件下，打包 EXE `--smoke-test` 退出码为 0。
 - 一个基于过时 fork 上下文的旧审计子任务两次把 `AGENTS.md` 和三份计划覆盖为已失效的零执行规则；主任务已用 `get_goal` 实时核验本地 Python 3.12 执行授权，并停止该子任务，四份文件随后按用户最终规则恢复。
 - 最终静态审查发现源选择指纹判断与快照指纹刷新之间存在竞态窗口；共享重定位服务现比较两次文件指纹，选择应用期间发生变化即拒绝，避免把未经确认的新内容保存为可信基线。
-- 已补源选择与指纹刷新竞态的测试源码，以及 Windows 夹具的精确 MPLS `mtime_ns` 契约；局部恢复/重定位矩阵 36 项通过，仍等待远程 Actions 的双平台与 UNC 最终验证。
-- 续接后的最新静态审计确认共享恢复服务已导出并同时接入 CLI/GUI，规划中“尚未被调用”的描述属于早期草稿状态；当前集中审计服务级恢复契约、GUI 成功后单次提交及失败保持旧工作区，并补齐远程测试证据。
+- 已补源选择与指纹刷新竞态的测试源码，以及 Windows 夹具的精确 MPLS `mtime_ns` 契约；局部恢复/重定位矩阵 36 项通过。
+- 共享恢复服务已导出并同时接入 CLI/GUI；CLI 删除重复准备逻辑，GUI 仅在完整恢复和原子项目写回成功后一次性提交工作区。
+- 提交 `e404ede4b66a36318eec44f6405c5a4e3a9720e5` 已通过精确 SHA 的 CI run `31694449905`：source distribution、Ubuntu 和 Windows 三个 job 全部成功；双平台 Ruff/Mypy/Pytest 成功，Windows 临时 SMB share 创建、真实 UNC 测试和清理成功，Ubuntu 四态 UI 截图生成与矩阵校验成功。
+- 远程 artifacts 均存在且未过期：Windows reports `9178747986`、Ubuntu reports `9178736523`、UI screenshots `9178736035`、source distribution `9178718181`。本机 `gh` 缓存 token 可读公开元数据但下载 ZIP 返回 401，因此本轮不能重复人工目视截图；截图步骤和矩阵门禁已由 Actions 成功执行，既有人工视觉基线仍为 run `31685081960`。
 - 映射契约并行查询误引用了不存在的 `tests/unit/test_application_mapping.py`，命令仅完成部分只读输出且未修改文件；后续按实际模块路径拆分查询，不重复该路径假设。
 - 工作模型已按用户最终指令更新：本机固定使用 `py -3.12`，允许安装缺失 Python 包并运行测试、Ruff、Mypy、构建和打包；非 Python 环境验证转交 GitHub Actions。
 - 根目录 `AGENTS.md` 已更新为上述规则并受 Git 跟踪；此前零执行规则已失效。
 - Git/GitHub 操作继续直接复用本机 SSH/Git Credential Manager 凭据，不通过浏览器登录、不替换身份、不修改全局 Git 配置；`gh` 缓存 token 与 Git SSH 凭据分别判断，下一次提交按精确 SHA 推送并审计远程结果。
 - 已显式读取 `C:\Users\Hanam\.ssh\config` 与 `known_hosts` 完成本机凭据只读验证：GitHub 返回 `origin/main` 为 `8fd25a72032de0cdc8f72104ca5c0de848be835d`。普通沙箱 SSH 调用超时，改用本机用户 SSH 配置后成功；`gh auth status` 仅显示其独立缓存 token 已失效，不影响 SSH 推送。
-- 续接开发后以当前工作树重新审计：`ProjectRestoreApplicationService` 草稿已能一次性扫描、加载字幕、恢复映射/策略并准备合并，但尚未从应用包导出，也未被 CLI/GUI 调用；CLI 仍保留私有 `_prepare_project()`，GUI 仍通过待恢复扫描和字幕回调逐步修改状态。
-- 本批的收敛路径固定为共享服务返回完整不可变准备结果，CLI 直接消费，GUI 仅在后台任务成功且项目快照原子保存成功后一次性投影工作区；取消、源变化或任一阶段失败均不得改变旧工作区或项目文件。
-- 本地只做源码与文本层静态审计；所有项目验证、Windows SMB/UNC、跨平台和最终候选检查均由精确 SHA 的 GitHub Actions 完成。
-- 当前远程绿色基线仍为 `8fd25a72032de0cdc8f72104ca5c0de848be835d` / run `31685081960`；本地 HEAD `c8a1e88` 仅记录该远程证据，尚未推送。
-- 本批目标是让打开项目时的 changed/missing BDMV 或字幕源进入独立待恢复流程；在全部源完成验证前不得扫描、修改旧工作区、绑定新项目或写入 BDMV。
+- `ProjectRestoreApplicationService` 现在一次性扫描、加载字幕、恢复映射/策略并准备合并，CLI/GUI 均消费同一不可变结果；取消、源变化或任一阶段失败均不改变旧工作区或项目文件。
+- 本地 Python 3.12 完成可用验证；Windows SMB/UNC、跨平台和最终候选检查由精确 SHA 的 GitHub Actions 完成。
+- 当前远程绿色基线为 `e404ede4b66a36318eec44f6405c5a4e3a9720e5` / run `31694449905`。
+- changed/missing BDMV 或字幕源会进入独立待恢复流程；全部源完成验证前不会扫描、修改旧工作区、绑定新项目或写入 BDMV。
 - 实现必须复用 `ProjectSourceRelocationService` 和原子项目保存，并保持核心逻辑 Qt/Windows API 无关、时间线为整数 90 kHz tick、CLI/GUI 共用应用服务。
-- 本地不执行源码、测试或构建命令，也不安装任何开发环境。
-- 静态审计已确认 GUI 会在 changed/missing 后继续重扫和加载，并可能覆盖原项目刷新指纹；CLI 则直接阻断，两端契约不一致。
-- 静态审计还确认独立重定位 index/MPLS 后，现有 CLI/GUI 仍从 BDMV 根重新发现另一条路径；本批必须让源检查、领域解析和最终执行指向同一组已确认路径。
-- GUI 还缺播放列表时长/fingerprint 校验、全部保存映射复现、`ConflictPolicySnapshot` 恢复，以及默认关闭的 Script Info/PlayRes 冲突接受入口；这些均纳入同一恢复批次。
+- 本地源码、测试和构建命令固定使用 Python 3.12；不在本机新增非 Python 环境。
+- GUI 在 changed/missing 后先完成逐源恢复，CLI 保持非交互阻断；两端共享相同的源身份、播放列表和映射复现契约。
+- index/MPLS 重定位后的源检查、领域解析和最终执行指向同一组已确认路径。
+- 播放列表时长/fingerprint、全部保存映射、`ConflictPolicySnapshot` 和 Script Info 冲突接受入口均已恢复并通过双平台 CI。
 - 工作模型固定为先建立 Qt 无关的项目扫描身份校验及测试契约，再接 GUI 待恢复状态机；CLI 复用共享规则但维持现有 changed/missing 非交互阻断，不新增 `relocate` 命令。
 - GUI 使用手工目录/文件选择器，不接入任务书未要求的自动候选搜索；changed 默认拒绝且 Escape 等同拒绝，应用前复核指纹，完整恢复和原子项目写回成功后才提交新工作区关联。
 - 远程测试矩阵已明确覆盖 unchanged、missing/exact/changed、多源取消、stem/时长/fingerprint、零偏移未锁定映射、四字段冲突策略、Script Info 开关和各失败阶段的两阶段提交不变量。
 - 更新工作模型时，首轮并行只读检查因可选 memory 搜索无匹配返回非零而未保留其他输出；已改用逐项 settled 结果恢复现场，未修改业务文件，也未执行项目代码。
 - 本轮首次状态核对时业务源码干净；规划更新后的复核发现 `project/relocation.py`、`ui/main_window.py` 和新文件 `ui/project_relocation.py` 正被另一条流程并发修改。它们不是本轮工作模型更新所写，已完整保留且未暂存、未回退、未提交；继续开发前必须先确认写入已稳定并整体审查其契约。
-- 续接后静态复核显示这些在研改动已形成可读草稿：项目层新增角色/路径校验，GUI 新增同步重定位对话框和部分播放列表身份检查。草稿尚未形成共享应用准备服务，也没有后台候选搜索、完整策略/映射恢复或测试代码，当前仅作为待整合实现，不视为已完成。
+- 早期静态复核时，这些在研改动仅形成角色/路径校验和重定位对话框草稿；后续已补齐共享应用准备服务、完整策略/映射恢复与测试，并由 run `31694449905` 闭环。
 - 应用层只读审计的首轮编排因 JavaScript 数组少一个闭合括号而在命令执行前失败；已修正脚本并成功读取真实模块，未运行任何项目代码。
 - 续接 Goal 后的首轮组合静态搜索把 PowerShell 不支持的 `*.md` 目录参数传给 `rg`，导致只读编排返回非零；未修改文件或执行项目代码，后续改为显式目录/文件读取并保留各项结果。
 - 最新静态审计确认在研接口与既有测试尚未同步：`test_open_project_source_checks_are_shown_without_modal_dialog` 仍调用已删除的 `_show_source_checks()`，若直接推送必然失败；恢复测试还缺新 `pending_project_snapshot` 与 scan 身份前置状态，必须连同两阶段恢复契约一起更新。
@@ -230,7 +231,7 @@
 - 当前 goal 已处于 active，目标是完成 BDSubMerge 1.0；仓库级 `AGENTS.md` 约束已作为后续工作的硬边界。
 - 当前已验证代码基线为 `8fd25a72032de0cdc8f72104ca5c0de848be835d` / run `31685081960`；任何后续改动仍必须由自己的精确 SHA 重新通过 Actions，不能继承该绿灯。
 - 本轮开始时前序源指纹、输出目标和 GUI 失败终态修复已完成提交与推送，源码工作树干净；仅本次工作模型记录产生规划文件变更。
-- 后续执行模型固定为本地静态审计和编辑、`git diff --check`、提交、使用本机凭据推送、等待并审计同 SHA GitHub Actions；本地不执行任何构建、测试、lint、类型检查、依赖安装或打包。
+- 后续执行模型固定为本地 Python 3.12 质量验证、`git diff --check`、提交、使用本机凭据推送、等待并审计同 SHA GitHub Actions；非 Python 环境只在远程配置。
 - 发布候选必须在同一 SHA 上闭环 CI、Windows Package、ZIP/SHA256、许可证、版本一致性和最终 EXE 视觉证据，再创建 `v1.0.0` tag/Release。
 - 本机凭据已实测可用：SSH 读取远程成功，`gh` keyring 的活动账号为 `YuSaZh`、Git 协议为 SSH 且具备 `repo` 权限；无需浏览器登录或补装本机开发环境。
 

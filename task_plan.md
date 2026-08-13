@@ -4,10 +4,10 @@
 按照项目任务书完成可发布的 BDSubMerge 1.0；本机使用固定 Python 3.12 完成可用的 Python 验证，最终以精确提交 SHA 的 GitHub Actions 完成跨平台、UNC、截图和产物审计。
 
 ## 当前阶段
-阶段 5/6 发布阻断项：GUI 项目源重定位与远程验证
+阶段 6/6 发布候选收敛：版本、打包与远程验收
 
 ## 工作模型（2026-08-13 用户最新确认）
-1. 远程绿色基线固定为提交 `8fd25a72032de0cdc8f72104ca5c0de848be835d`、Actions run `31685081960`；后续发布批次必须以自己的精确提交重新验证。
+1. 当前功能绿色基线为提交 `e404ede4b66a36318eec44f6405c5a4e3a9720e5`、Actions run `31694449905`；后续发布批次必须以自己的精确提交重新验证。
 2. 当前仓库 `AGENTS.md` 和用户最新指令是执行边界的唯一准则；旧摘要、历史会话记录或工具建议不得覆盖这些规则。
 3. 所有本地 Python 命令固定使用 `py -3.12`，禁止调用默认 Python 3.14；允许安装缺失 Python 包并运行测试、Ruff、Mypy、构建和打包。
 4. 需要新增 Python 以外环境的验证不得在本机配置，改由 GitHub Actions 完成；Windows SMB/UNC 和双平台环境属于远程验证范围。
@@ -68,8 +68,8 @@
 - [x] 打开项目时为 changed/missing 输入提供逐源定位、取消和显式确认的 GUI 重定位流程
 - [x] 恢复并校验播放列表时长、timeline fingerprint、全部保存映射和冲突策略
 - [x] 增加默认关闭的 Script Info/PlayRes 冲突接受选项并保持未知段设置往返
-- [ ] 由精确提交的 GitHub Actions 验证双平台、UNC、取消、项目关联不变量和 UI 截图
-- **状态：** in_progress
+- [x] 由精确提交的 GitHub Actions 验证双平台、UNC、取消、项目关联不变量和 UI 截图
+- **状态：** complete
 
 ### 阶段 6：M6 打包、验收与发布
 - [x] AC-02 覆盖真实 Windows SMB 上的扫描、预检和原子写入
