@@ -45,13 +45,16 @@ def default_log_directory(
     environment = os.environ if environ is None else environ
     home_path = Path.home() if home is None else home
     if platform_value.startswith("win"):
-        base = environment.get("LOCALAPPDATA") or environment.get("APPDATA")
-        return (Path(base) if base else home_path / "AppData" / "Local") / "BDSubMerge" / "logs"
+        windows_base = environment.get("LOCALAPPDATA") or environment.get("APPDATA")
+        windows_path = (
+            Path(windows_base) if windows_base else home_path / "AppData" / "Local"
+        )
+        return windows_path / "BDSubMerge" / "logs"
     if platform_value == "darwin":
         return home_path / "Library" / "Logs" / "BDSubMerge"
     state_home = environment.get("XDG_STATE_HOME")
-    base = Path(state_home) if state_home else home_path / ".local" / "state"
-    return base / "bdsubmerge" / "logs"
+    state_path = Path(state_home) if state_home else home_path / ".local" / "state"
+    return state_path / "bdsubmerge" / "logs"
 
 
 def dependency_versions() -> dict[str, str]:
