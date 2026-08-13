@@ -140,6 +140,8 @@ jobs:
             'dist/BDSubMerge/LICENSES/PYSUBS2.txt',
             'dist/BDSubMerge/LICENSES/BLURAY_SUBTITLE.txt',
             'dist/BDSubMerge/LICENSES/QT_SOURCE_OFFER.txt',
+            'dist/BDSubMerge/LICENSES/LGPL-3.0-only.txt',
+            'dist/BDSubMerge/LICENSES/GPL-3.0-only.txt',
             'dist/BDSubMerge/LICENSES/PYTHON.txt',
             'dist/BDSubMerge/LICENSES/installed-distributions.json'
           )
@@ -162,14 +164,14 @@ jobs:
               throw "Installed dependency license files are missing: $distribution"
             }
           }
-          $qtLicenses = Get-ChildItem -Path 'dist/BDSubMerge/LICENSES/PySide6*' `
-            -Recurse -File
-          $hasLgplText = $qtLicenses | Where-Object {
-            Select-String -LiteralPath $_.FullName `
-              -Pattern 'GNU LESSER GENERAL PUBLIC LICENSE' -SimpleMatch -Quiet
-          }
-          if (-not $hasLgplText) {
+          $licenseRoot = 'dist/BDSubMerge/LICENSES'
+          if (-not (Select-String -LiteralPath "$licenseRoot/LGPL-3.0-only.txt" `
+              -Pattern 'GNU LESSER GENERAL PUBLIC LICENSE' -SimpleMatch -Quiet)) {
             throw 'Qt LGPL license text is missing'
+          }
+          if (-not (Select-String -LiteralPath "$licenseRoot/GPL-3.0-only.txt" `
+              -Pattern 'GNU GENERAL PUBLIC LICENSE' -SimpleMatch -Quiet)) {
+            throw 'GPLv3 license text required by LGPLv3 is missing'
           }
       - name: Create ZIP and SHA256
         shell: pwsh

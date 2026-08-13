@@ -50,6 +50,8 @@
 | 31662574227 | Ubuntu、Windows Mypy | 运行日志路径局部变量类型冲突，4 项同源诊断 | fail |
 | 31662716282 | 完整 CI | `bc79a73` 类型修复后全平台 CI 与真实 Windows UNC 验收通过 | pass |
 | 31662921037 | Windows Package | onedir 构建与依赖许可证收集通过；Qt LGPL 文件名门禁误判，ZIP 前停止 | fail |
+| 31663297253 | 完整 CI | `0ff9b9b` 的 Ubuntu/Windows、真实 UNC 与源码包全部通过 | pass |
+| 31663324198 | Windows Package | wheel 元数据实际未提供 LGPL 正文；构建与依赖许可收集通过，ZIP 前停止 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -63,9 +65,12 @@
 | M6 严格类型 | 两个平台在 UI/CLI 发现相同 6 项 Mypy 错误 | 按真实模型字段和 Qt/argparse 状态显式收窄，继续远程验证 |
 | AC-06 路径恢复 | 相对路径拼接保留词法 `..`，恢复状态与原状态不相等 | 对输入/输出恢复路径做不访问文件系统的词法规范化 |
 | 运行日志路径类型 | Windows base 字符串与 Unix Path 复用同名变量导致 Mypy 冲突 | 拆分平台局部变量，提交 `bc79a73` 推送远程验证 |
-| Package Qt 许可门禁 | 已收集许可文件，但仅按 `*LGPL*` 文件名匹配导致误判 | 改为在已收集 PySide6 许可文本中验证 LGPL 正文标题 |
+| Package Qt 许可门禁 | PySide6 6.11.1 wheel 元数据未提供可验证的 LGPL 正文 | 从匹配的 PySide 源码标签逐字纳入 LGPLv3/GPLv3，固定 Git blob 并设为硬门禁 |
 | 恢复状态并行查询 | 一个无匹配项使整组查询退出，未返回可用状态 | 拆分关键查询并对可选搜索独立处理 |
 | 许可证脚本路径假设 | 假定存在独立 `scripts/collect_dependency_licenses.py` | 读取真实工作流，确认收集逻辑内嵌在 YAML |
+| 映射模块路径假设 | 假定映射实现为 `src/bdsubmerge/mapping.py` | 用 `rg --files` 确认其为 `mapping/` 包，再按真实模块读取 |
+| 文件规划记录补丁 | 将 `progress.md` 的预期行误用于 `findings.md` 上下文 | 按两份文件各自结构拆分补丁 |
+| 许可证 Base64 转补丁 | 编排环境无 `atob`，随后低输出预算截断 Base64 | 改用 GitHub raw media type并提高单次读取预算，正文通过 `apply_patch` 写入 |
 
 ## 五问重启检查
 | 问题 | 答案 |

@@ -19,4 +19,6 @@ this repository. Its MIT notice is retained because it is a requirements-level r
 The Windows onedir artifact keeps Qt shared libraries separate from the executable. Its
 `LICENSES` directory preserves the license-file paths extracted from the exact bundled wheels,
 including lxml's notices for bundled XML libraries, plus the Python runtime license and Qt
-source acquisition information for the bundled version.
+source acquisition information for the bundled version. It also includes verbatim LGPLv3 and
+GPLv3 texts from the matching PySide 6.11.1 source tag because current wheels do not expose the
+LGPL text under a stable metadata filename.
