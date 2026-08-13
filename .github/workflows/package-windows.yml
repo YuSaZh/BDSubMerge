@@ -219,7 +219,7 @@ jobs:
       - name: Capture final executable visual evidence
         shell: pwsh
         env:
-          QT_QPA_PLATFORM: windows
+          QT_QPA_PLATFORM: offscreen
         run: |
           $executable = Join-Path $env:RUNNER_TEMP `
             'BDSubMerge 最终包 无 Python/BDSubMerge/BDSubMerge.exe'

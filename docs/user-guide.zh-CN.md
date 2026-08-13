@@ -188,8 +188,8 @@ onedir 包，并保持 `_internal`、`LICENSE`、`LICENSES` 和 `THIRD_PARTY_NOT
 - 不静默覆盖，写入前必须显示并预检完整目标；
 - 除非用户主动启用未来的调试功能，否则不记录字幕正文；
 - 不包含遥测、网络上传、在线字幕下载或自动更新；
-- 本机 Python 命令必须显式使用 `py -3.12`；允许安装 Python 依赖并执行测试、lint、
-  类型检查、构建和打包。需要新增非 Python 环境的验证必须在 GitHub Actions 执行；
+- 依赖安装、测试、lint、类型检查、构建和打包必须全部在 GitHub Actions 执行；本机
+  仅允许源码阅读、静态文本搜索、Git 操作及 `git diff --check` 等不执行代码的检查。
   每个推送候选都要按精确提交 SHA 审计。
 
 当前真实验证缺口是实际 MPLS/SUP fixture 覆盖广度和干净的 Windows 10/11 桌面。

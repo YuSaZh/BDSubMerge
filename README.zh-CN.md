@@ -58,9 +58,9 @@ bdsubmerge merge "D:\Projects\Title.bdsm.json" --json
 
 ## 开发与验证
 
-目标环境为 Python 3.12。本机 Python 命令必须显式使用 `py -3.12`；允许安装 Python
-依赖并执行测试、lint、类型检查、构建和打包。需要新增非 Python 环境的验证交给
-GitHub Actions；每次推送都按精确提交 SHA 审计。架构见
+目标环境为 Python 3.12。依赖安装、测试、lint、类型检查、构建和打包全部只在
+GitHub Actions 执行。本机仅允许源码阅读、静态文本搜索、Git 操作及
+`git diff --check` 等不执行代码的检查；每次推送都按精确提交 SHA 审计。架构见
 [docs/architecture.md](docs/architecture.md)，时间基准见
 [docs/adr/0001-media-timebase.md](docs/adr/0001-media-timebase.md)，变更记录见
 [CHANGELOG.md](CHANGELOG.md)。

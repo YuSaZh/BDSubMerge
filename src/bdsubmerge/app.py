@@ -6,6 +6,7 @@ import sys
 from argparse import ArgumentParser
 from collections.abc import Sequence
 from importlib import import_module
+from os import environ
 from pathlib import Path
 
 from bdsubmerge import __version__
@@ -24,7 +25,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _run(argv: Sequence[str] | None = None) -> int:
     from PySide6.QtCore import QCoreApplication, Qt
-    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication
     from PySide6.QtWidgets import QApplication
 
     from bdsubmerge.ui import MainWindow, ThemeMode
@@ -54,6 +55,15 @@ def _run(argv: Sequence[str] | None = None) -> int:
     else:
         raise RuntimeError("a non-GUI Qt application already exists")
     application.setStyle("Fusion")
+    if options.capture_screenshot is not None and sys.platform == "win32":
+        fonts_root = Path(environ.get("SystemRoot", r"C:\Windows")) / "Fonts"
+        font_filename = "msyh.ttc" if options.locale == "zh_CN" else "segoeui.ttf"
+        font_path = fonts_root / font_filename
+        font_id = QFontDatabase.addApplicationFont(str(font_path))
+        font_families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
+        if not font_families:
+            raise RuntimeError(f"could not load screenshot font: {font_path}")
+        application.setFont(QFont(font_families[0]))
     window = MainWindow()
     if options.locale is not None:
         window.set_language(options.locale)

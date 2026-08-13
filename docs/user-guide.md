@@ -204,8 +204,9 @@ separate validation concerns.
 - Never silently overwrite output; display and preflight the full destination.
 - Do not log subtitle body text unless explicit debugging is added by the user.
 - No telemetry, network upload, online subtitle download, or automatic update is present.
-- Local Python commands must explicitly use `py -3.12`. Python dependencies, tests, lint,
-  type checks, builds, and packaging may run locally; validation that requires a new non-Python
-  environment must run in GitHub Actions. Audit each pushed candidate by exact commit SHA.
+- Dependency installation, tests, lint, type checks, builds, and packaging must run exclusively
+  in GitHub Actions. Local work is limited to source inspection, static text searches, Git
+  operations, and non-executing checks such as `git diff --check`. Audit each pushed candidate by
+  exact commit SHA.
 
 Known validation gaps are real-world MPLS/SUP fixture breadth and a clean Windows 10/11 desktop.

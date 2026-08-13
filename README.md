@@ -65,9 +65,9 @@ See the [Chinese README](README.zh-CN.md) and
 
 ## Development
 
-The target is Python 3.12. Local Python work must explicitly use `py -3.12`; Python dependency
-installation, tests, linters, type checks, builds, and packaging are allowed. Validation that
-requires provisioning a new non-Python environment belongs in GitHub Actions. Every pushed
+The target is Python 3.12. Dependency installation, tests, linters, type checks, builds, and
+packaging run exclusively in GitHub Actions. Local work is limited to source inspection, static
+text searches, Git operations, and non-executing checks such as `git diff --check`. Every pushed
 candidate is audited against its exact commit SHA. See [architecture](docs/architecture.md),
 [timebase ADR](docs/adr/0001-media-timebase.md), and [changelog](CHANGELOG.md).
 

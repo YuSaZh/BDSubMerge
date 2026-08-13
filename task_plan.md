@@ -1,7 +1,7 @@
 # BDSubMerge 开发计划
 
 ## 目标
-按照项目任务书完成可发布的 BDSubMerge 1.0；本机使用固定 Python 3.12 完成可用的 Python 验证，最终以精确提交 SHA 的 GitHub Actions 完成跨平台、UNC、截图和产物审计。
+按照项目任务书完成可发布的 BDSubMerge 1.0；本机只做源码检查、静态文本搜索、Git 操作和不执行代码的文件检查，全部可执行验证由精确提交 SHA 的 GitHub Actions 完成。
 
 ## 当前阶段
 阶段 6/6 发布候选收敛：版本、打包与远程验收
@@ -9,9 +9,9 @@
 ## 工作模型（2026-08-13 用户最新确认）
 1. 当前绿色基线为提交 `e5abdf4cbd857d93c94c3df85c63b13ab66006eb`、Actions run `31694994062`；后续发布批次必须以自己的精确提交重新验证。
 2. 当前仓库 `AGENTS.md` 和用户最新指令是执行边界的唯一准则；旧摘要、历史会话记录或工具建议不得覆盖这些规则。
-3. 所有本地 Python 命令固定使用 `py -3.12`，禁止调用默认 Python 3.14；允许安装缺失 Python 包并运行测试、Ruff、Mypy、构建和打包。
-4. 需要新增 Python 以外环境的验证不得在本机配置，改由 GitHub Actions 完成；Windows SMB/UNC 和双平台环境属于远程验证范围。
-5. 每个可审查批次都按“源码与测试编辑 -> 本地 Python 3.12 质量验证 -> `git diff --check` -> 提交 -> 使用本机 SSH/`gh` 凭据推送 -> 等待精确提交 SHA 的 GitHub Actions -> 审计日志与 artifact”闭环。
+3. 本机禁止依赖安装、测试、Ruff、Mypy、构建、打包及任何项目代码执行；不得因已有 Python 环境而例外执行。
+4. 全部可执行验证仅由 GitHub Actions 完成，包括 Python 3.12、双平台、Windows SMB/UNC、截图和打包验证。
+5. 每个可审查批次都按“源码与测试编辑 -> 静态审查 -> `git diff --check` -> 提交 -> 使用本机 SSH/`gh` 凭据推送 -> 等待精确提交 SHA 的 GitHub Actions -> 审计日志与 artifact”闭环。
 6. Git 操作直接使用本机现有 SSH/Git Credential Manager 凭据；不打开浏览器登录、不创建替代身份、不改全局 Git 配置。`gh` 缓存 token 与 Git SSH 凭据分开判断，Git 凭据可用时不得转入浏览器。
 7. 遇到工作树来源、Git SSH 凭据、CI、artifact 或发布门禁异常时先停止扩大范围，保留现场并向用户确认；`gh` API 调用使用已刷新凭据的 Hanam 本机用户上下文，默认沙箱旧 token 不作为认证结论。
 8. 发布顺序固定为：完成 GUI 项目源重定位 -> 复核剩余规范缺口 -> 收紧 Windows 包与版本/截图门禁 -> 统一 `1.0.0` 元数据和双语文档 -> 推送最终候选并审计 CI/ZIP/SHA256/许可证/视觉证据 -> 创建 `v1.0.0` tag 和 GitHub Release。
@@ -82,12 +82,12 @@
 - [ ] 在统一 `1.0.0` 后对同一最终候选重新执行 Windows 包、版本和视觉审计
 - [ ] 生成稳定 ZIP、SHA256，并完成 tag/Release 自动发布链
 - [x] 完善双语 README、用户文档、报告、限制与本地测试证据
-- [ ] 统一 `1.0.0` 版本元数据并完成远程发布验证（本地已完成，待远程）
+- [ ] 完成统一 `1.0.0` 版本元数据的远程发布验证
 - **状态：** in_progress
 
 ## 关键约束
-1. 本地 Python 命令必须显式使用 `py -3.12`；允许安装缺失 Python 包并执行测试、Ruff、Mypy、构建和打包。
-2. 需要新增非 Python 环境的验证只在 GitHub Actions 执行；最终提交必须通过精确 SHA 的远程 CI 审计。
+1. 本机禁止依赖安装、测试、lint、类型检查、构建、打包及项目代码执行，只允许源码检查、静态文本搜索、Git 和 `git diff --check` 等非执行检查。
+2. 全部验证只在 GitHub Actions 执行；最终提交必须通过精确 SHA 的远程 CI 审计。
 3. Git 和 GitHub 操作使用本机现有凭据，不通过浏览器重新登录。
 4. 遇到异常先定位根因；不得扩大系统或仓库变更范围。
 
@@ -135,6 +135,7 @@
 | Windows 包截图缺字 | 1 | 最终 EXE 在 Qt `offscreen` 后端下中英文均渲染为方框；A/B 证明原生 `windows` 后端字体正常，工作流截图固定使用原生平台并保留隐藏自动捕获 |
 | 英文 waiting 占位未刷新 | 1 | 语言切换只在摘要为空时填文案，初始化中文占位因此残留；仅当摘要仍是旧 waiting 占位时翻译，真实预检内容保持不变 |
 | Windows 截图平台补丁上下文 | 1 | 首次环境补丁命中了烟测步骤而非截图步骤；提交前完整 diff 发现并纠正为烟测 `offscreen`、截图 `windows`，同时增加 PNG 细节大小门禁 |
+| GitHub runner 原生截图挂起 | 1 | Package run `31698548909` 在原生 `windows` 截图步骤持续挂起；取消该 run，恢复 CI `offscreen` 并在截图专用入口显式注册 Windows 系统中英文字体，避免交互桌面依赖 |
 | 进度审计模块路径假设 | 1 | ASS/SRT 实际统一位于 `merge/engine.py`，SUP 位于 `subtitles/pgs_adapter.py`；按 `rg --files` 的真实路径继续 |
 | 进度批次远程 Pytest | 1 | run `31674853072` 两平台同一 GUI 测试替身不接受新增 `cancellation_check` 关键字；同步两处替身与应用服务接口后继续远程验证 |
 | 默认沙箱 SSH 只读检查超时 | 1 | 显式读取 Hanam 本机 SSH config/known_hosts 后成功，确认远端 `main` 为 `8fd25a7`；不使用浏览器或失效的 `gh` token |

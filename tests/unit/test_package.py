@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -60,3 +61,23 @@ def test_gui_can_capture_release_visual_evidence(
 
     assert result == 0
     assert destination.stat().st_size > 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="requires Windows system-font handling")
+def test_gui_capture_reports_a_missing_windows_font(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("SystemRoot", str(tmp_path / "missing-windows"))
+
+    with pytest.raises(RuntimeError, match="could not load screenshot font"):
+        app_main(
+            [
+                "bdsubmerge-gui",
+                "--capture-screenshot",
+                str(tmp_path / "release-ui.png"),
+                "--locale",
+                "zh_CN",
+            ]
+        )

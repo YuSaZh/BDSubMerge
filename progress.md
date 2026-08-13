@@ -267,6 +267,8 @@
 
 ### 阶段 6 恢复与仓库规则核对（2026-08-13）
 - **状态：** in_progress
+- 用户最新规则已覆盖此前本地 Python 执行授权：本机禁止依赖安装、测试、Ruff、Mypy、构建、打包和项目代码执行，只保留源码检查、静态文本搜索、Git 与 `git diff --check`；根目录 `AGENTS.md`、计划、发现和双语开发说明已同步。
+- GitHub CLI 设备认证已由用户完成；本机 keyring 活动账号为 `YuSaZh`、Git 协议为 SSH 且权限完整，后续直接使用本机 `gh`/SSH 凭据，不再打开浏览器登录。
 - 根目录 `AGENTS.md` 已随 `e404ede` 推送，仓库通用规则明确固定 `py -3.12`、允许缺失 Python 包安装和本地 Python 验证、非 Python 新环境交给 GitHub Actions，并禁止浏览器登录 GitHub。
 - `main`、`origin/main` 与工作树核对无差异；当前 HEAD 为 `e5abdf4cbd857d93c94c3df85c63b13ab66006eb`。
 - 精确 SHA run `31694994062` 已全部成功：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows 真实 UNC 建立与清理、Ubuntu 四态截图矩阵和 artifacts 上传均通过。
@@ -277,3 +279,4 @@
 - 本机 PyInstaller 6.22.0 onedir 与无 Python `1.0.0` 烟测通过。首次 `offscreen` 最终 EXE 截图虽为 1440x1000 但中英文均缺字；原生 Windows 平台 A/B 截图字体正常，并发现英文界面 waiting 占位未刷新。已针对性修正工作流平台和占位翻译，等待重新验证。
 - 最终本机闭环完成：323 passed、2 deselected、coverage 84.64%，Ruff/Mypy strict/YAML/diff 均通过；`bdsubmerge-1.0.0` sdist/wheel 的版本和双语资源已核对；PyInstaller 6.22.0 onedir、清空 Python 环境后的 `--expect-version 1.0.0` 烟测通过。
 - 最终 EXE 原生 Windows 截图为中文浅色 `2160x1500` / SHA256 `90866d9ae73c17a5eeab63fd3c85533d12800828fcfa60565ad354a4093a71f3`，英文深色 `2160x1500` / SHA256 `eaa7225ad9bd7786d9c4b7848c37392b385434bea34f1af9cc5ba4fc1bca56e7`；人工审查字体、翻译、主题和布局正常，无重叠或截断。
+- commit `5a5ed53` 的 CI run `31698531549` 已全绿；Package run `31698548909` 已通过版本、构建、许可证、ZIP/SHA256 和无 Python 烟测，但原生 Windows 截图在无交互 runner 挂起。已取消候选 Package run，改为离屏截图显式加载系统字体，等待新提交重新闭环。

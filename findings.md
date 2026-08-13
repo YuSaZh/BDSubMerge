@@ -5,21 +5,21 @@
 - 工具面向 Windows 11，输入 BDMV/PLAYLIST/MPLS/index.bdmv，输出外置 ASS/SSA/SRT/SUP。
 - 任务书要求自动播放列表推荐、分集字幕映射、可视化时间线、多输出目标、项目复现和 CLI。
 - UI 默认简体中文并支持英文，耗时任务必须在后台运行。
-- 本机固定使用 `py -3.12`，允许安装缺失 Python 包并运行测试、Ruff、Mypy、构建和打包；不得误用默认 Python 3.14。
-- 当前仓库 `AGENTS.md`、用户最新指令和实时 Goal 优先于旧会话摘要或子任务 fork；更早的本机零执行记录已失效，非 Python 环境验证才转交 GitHub Actions。
+- 用户最新规则禁止本机依赖安装、测试、Ruff、Mypy、构建、打包及项目代码执行；全部可执行验证仅通过 GitHub Actions 完成。
+- 当前仓库 `AGENTS.md` 和用户最新指令优先于旧 Goal、会话摘要或历史记录；本机仅允许源码检查、静态文本搜索、Git 和 `git diff --check` 等非执行检查。
 - Git/GitHub 必须直接使用本机已有 SSH 与 `gh` 凭据；禁止转入浏览器登录或另建认证路径。
 - 本轮实时验证确认 Hanam 本机 SSH 凭据已将 `YuSaZh/BDSubMerge` 远端 `main` 推送至 `e404ede4b66a36318eec44f6405c5a4e3a9720e5`；`gh` 的独立缓存 token 对 artifact 下载失效，不能据此误判 Git SSH 凭据不可用。
 
 ## 研究发现
 - 最新工作树已将 `ProjectRestoreApplicationService` 从应用包导出，并在 CLI `_prepare_project()` 与 GUI 后台项目恢复任务中调用；早期“尚未接入”的记录已过时。当前证据缺口转为完整服务级回归、UI 两阶段提交细节和旧 CLI 测试替身兼容性。
-- 2026-08-13 用户最终确认恢复本地 Python 3.12 执行权限：测试、Ruff、Mypy、构建、打包和缺失 Python 包安装均允许；此前“本机零执行”规则已失效。
+- 2026-08-13 用户随后收紧规则：即使本机已有 Python 3.12 环境，也不得执行依赖安装、测试、Ruff、Mypy、构建或打包，全部交给 GitHub Actions。
 - `ProjectRestoreApplicationService` 已覆盖扫描身份、字幕加载、保存边界/映射锁、输出目标、冲突策略和映射复现检查，并成为 CLI/GUI 唯一恢复入口；GUI 从多回调状态变更改为成功后单次提交。
-- 本机已安装 Python 3.12 项目依赖、PySide6、pytest、Ruff、Mypy、build、Hatchling 和 PyInstaller，可直接用于当前验证。
+- 本机虽已有 Python 3.12 项目工具，但按最新仓库规则不得用于当前验证。
 - `e404ede4b66a36318eec44f6405c5a4e3a9720e5` / run `31694449905` 已全绿：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows SMB/UNC 生命周期和 Ubuntu 四态截图矩阵全部成功；四个 artifacts 存在且未过期。当前 `gh` token 下载 artifact ZIP 返回 401，因此本轮无法重复人工目视截图，不能把矩阵成功夸大为新一轮人工视觉审查。
 - `e5abdf4cbd857d93c94c3df85c63b13ab66006eb` / run `31694994062` 也已全绿：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows SMB/UNC 生命周期、Ubuntu 四态截图矩阵和 artifacts 上传全部成功，成为当前精确 SHA 绿色基线。
 - 用户已通过 GitHub CLI 官方设备流程刷新 Hanam 本机 keyring 凭据；本机用户上下文中的 `gh` 现拥有完整申请 scope 集，对 `YuSaZh/BDSubMerge` 具有 admin/maintain/push 权限，Actions 与 Release API 均已验证可用。默认沙箱仍看见旧 token，因此后续 `gh` API 审计必须显式使用本机用户凭据上下文；Git 传输继续使用 SSH。
 - `1.0.0` 发布候选已统一 `pyproject.toml`、包 `__version__`、测试、双语文档和 Changelog。Windows 工作流从项目元数据解析稳定 SemVer，产出带版本号的 ZIP/SHA256，并要求最终 EXE 自校验内嵌版本。
-- 最终 EXE 视觉证据必须使用 Windows 原生 Qt 平台；`offscreen` 后端在本机把中英文均渲染为方框。原生平台 A/B 证明字体恢复，最终中英文截图为 2160x1500、哈希互异，英文 waiting 占位也已修复为 `Not yet checked`。
+- Windows runner 的原生 Qt 平台在无交互桌面时会挂起；最终 EXE 视觉证据改用 `offscreen`，并在截图入口显式注册系统中英文字体。PNG 细节、尺寸和哈希门禁仍由远程工作流验证。
 - 当前最终源码本机验证为 323 passed、2 deselected、coverage 84.64%；两项 deselect 仅为要求 CI 临时 Windows SMB/UNC 环境的 AC-02。Ruff、Mypy strict、工作流 YAML、`git diff --check`、1.0.0 sdist/wheel、双语 wheel 资源、PyInstaller 6.22.0 onedir和无 Python EXE 版本烟测均通过。
 - GUI 项目源重定位缺口已关闭：打开项目遇到 changed/missing 输入时，在任何扫描或字幕加载前逐源定位；exact 直接接受，changed 默认拒绝并要求显式确认，完整成功后才原子写回项目。
 - 项目恢复必须在任何 BDMV 重扫或字幕重载前完成源门禁；否则 GUI 会把重载后的当前指纹当作新基线，使项目保存时记录的 changed/missing 身份约束失效。全部源完成恢复前还必须禁止覆盖原项目文件和生成输出。
@@ -63,7 +63,7 @@
 - UI 截图必须作为独立 artifact 使用精确 PNG 路径和 `if-no-files-found: error`；上传整个已有 JUnit/coverage 的 `reports/` 目录不能证明截图存在。Ubuntu 截图还需显式安装 CJK 字体，避免中文界面依赖 runner 的偶然字体集合。
 - commit `38c3d78` 的 run `31672669445` 已完成远程闭环：Ubuntu 230 passed、2 skipped、82.93%，Windows 232 passed、82.92% 且真实 SMB/UNC 通过；四态截图 artifact `9170299987` 的文件哈希与日志一致，人工审计无重叠、截断或 CJK 缺字。
 - 当前工作树在绿色基线之后已有实际进度回调、字幕发现/加载应用服务和 UI 任务桥接的未提交源码；这些改动尚无对应测试提交或 Actions run，必须作为独立在研批次审计，不能视为已验证功能。
-- 当前 goal 已处于 active；执行边界以仓库级 `AGENTS.md` 为准，本地 Python 3.12 负责可用验证，GitHub Actions 负责非 Python 环境、跨平台和最终精确 SHA 审计。
+- 当前 goal 已处于 active；执行边界以仓库级 `AGENTS.md` 为准，全部可执行验证、跨平台检查和最终精确 SHA 审计均由 GitHub Actions 完成。
 - 2026-08-13 再次实测本机凭据：显式使用 `C:\Users\Hanam\.ssh\config` 与 `known_hosts` 可读取 `git@github.com:YuSaZh/BDSubMerge.git`；`gh auth status` 显示活动账号 `YuSaZh`、SSH Git 协议和 `repo` scope。沙箱内不能直接读取用户 SSH 配置，外部 Git 对沙箱所有权仓库需使用单次 `safe.directory`，两者都不需要更改全局 Git 或网页登录。
 - 当前未提交实现已让 `ServiceTask` 透传嵌套进度，并让 GUI 显示详情；但应用层目前只有字幕发现/加载报告中间进度，扫描、预检、合并等长任务是否有足够的阶段与详情仍需逐一审计。
 - 当前未提交批次还把目录拖放的字幕发现移入应用服务，并新增项目扫描失败处理；现有 `tests/` 尚无对应未提交变化，必须补足服务、取消、进度和 GUI 回归测试后才能推送验证。
