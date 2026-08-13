@@ -84,6 +84,7 @@ from .models import (
     ScanRequest,
     ScanResult,
     SubtitleAsset,
+    SubtitleInput,
 )
 from .protocols import BinaryReader, PlaylistAdapter
 from .reporting import (

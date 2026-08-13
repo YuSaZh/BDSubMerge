@@ -149,4 +149,4 @@ def _walk_error_handler(
 
 
 def _path_identity(path: Path) -> str:
-    return os.path.normcase(os.path.abspath(path))
+    return os.path.normcase(str(path.absolute()))

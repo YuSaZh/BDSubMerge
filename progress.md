@@ -105,6 +105,7 @@
 | `gh release list` JSON 字段 | 当前本机 `gh` 不支持请求 `url` 字段，整组只读查询中断 | 使用命令列出的可用字段重新查询，不重复无效参数 |
 | 原子写入模块路径假设 | 假定实现位于 `output/atomic.py`，只读查询因文件不存在中断 | 先用 `rg --files src/bdsubmerge/output` 定位真实模块后再审计 |
 | 进度审计合并模块路径 | 假定 ASS/SRT/SUP 各有独立合并模块，三个只读读取失败 | `rg --files` 确认文本合并集中于 `merge/engine.py`，SUP 集中于 `subtitles/pgs_adapter.py` |
+| 进度批次远程 Ruff | run `31674632907` 两平台同报 `SubtitleInput` F821 与 `os.path.abspath` PTH100 | 补应用模型导入，改用不解引用的 `Path.absolute()` 保留路径错误隔离语义 |
 
 ### UI 截图发布证据
 - **状态：** complete
