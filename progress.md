@@ -85,6 +85,7 @@
 | 31674853072 | 完整 CI | `f5c1a38` 源码包、双平台 Ruff/Mypy、Windows SMB/UNC 通过；双平台同一 GUI 测试替身契约失败，截图跳过 | fail |
 | 31675293315 | 完整 CI | `251424a` 源码包、双平台 Ruff/Mypy/Pytest、真实 Windows SMB/UNC、四态截图与 artifact 全部通过 | pass |
 | 31678423407 | 完整 CI | `4cd77f7` 源码包成功；双平台 Ruff 同报 `test_details.py` 中文全角标点 RUF001，Mypy/Pytest/截图未运行 | fail |
+| 31678761361 | 完整 CI | `8d4bfca` 源码包成功；双平台 Ruff 暴露余下 9 个中文全角标点 RUF001，后续阶段未运行 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -127,6 +128,7 @@
 | 未跟踪文件差异误读 | 普通 `git diff` 不显示新建的 `details.py`，一度误判文件名字段位置 | 显式读取所有未跟踪文件，并在暂存后审查完整 cached diff |
 | 详情补充字段语义 | 仅凭旧 formatter 变量名一度把指纹第四项标成连接条件，实际构造源 `equivalence.py` 使用 `selected_angle` | 按构造契约改为选中角度，并同步 Qt/非 Qt 格式化断言 |
 | 详情批次远程 Ruff | run `31678423407` 双平台仅报新增中文断言的 10 个全角标点 RUF001 | 对精确 UI 预期字符串添加逐行 `noqa`，不改用户可见中文 |
+| 详情批次远程 Ruff 续报 | run `31678761361` 显示首轮 annotations 未列全的 9 个同类诊断 | 静态扫描本批全部 Python 文件的全角括号、冒号和逗号，一次性补齐逐行豁免 |
 
 ### UI 截图发布证据
 - **状态：** complete

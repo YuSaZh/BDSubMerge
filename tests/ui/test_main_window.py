@@ -282,9 +282,9 @@ def test_preflight_displays_expected_counts_and_warning_summary(
     window._preflight_finished(prepared)
 
     summary = window.preflight_summary.toPlainText()
-    assert "预计事件数：3" in summary
-    assert "预计样式数：2" in summary
-    assert "警告数：1" in summary
+    assert "预计事件数：3" in summary  # noqa: RUF001
+    assert "预计样式数：2" in summary  # noqa: RUF001
+    assert "警告数：1" in summary  # noqa: RUF001
 
 
 def test_playlist_double_click_opens_localized_read_only_structure(
@@ -300,7 +300,7 @@ def test_playlist_double_click_opens_localized_read_only_structure(
     assert dialog is not None
     assert dialog.isVisible()
     assert dialog.windowTitle() == "播放列表 00001 结构"
-    assert "PlayItem（0）" in dialog.details.toPlainText()
+    assert "PlayItem（0）" in dialog.details.toPlainText()  # noqa: RUF001
     assert dialog.details.isReadOnly()
 
 
@@ -331,7 +331,7 @@ def test_subtitle_double_click_shows_loaded_source_analysis(
     assert "事件数: 1" in details
     assert "样式数: 1" in details
     assert "文件名: episode.ass" in details
-    assert "警告（1）" in details
+    assert "警告（1）" in details  # noqa: RUF001
     assert "已排除疑似超长尾事件计算有效时长" in details
     assert str(subtitle) in details
 

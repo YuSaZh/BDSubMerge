@@ -109,6 +109,6 @@ def test_subtitle_details_render_attachments_sections_and_pgs_segments() -> None
     assert "最早开始时间: 未知" in rendered
     assert "字体附件（1）\n  - body.ttf" in rendered  # noqa: RUF001
     assert "Aegisub Extradata: 是（1 条）" in rendered  # noqa: RUF001
-    assert "0x16 呈现合成：3 个包" in rendered
-    assert "0x99 未知：1 个包" in rendered
+    assert "0x16 呈现合成：3 个包" in rendered  # noqa: RUF001
+    assert "0x99 未知：1 个包" in rendered  # noqa: RUF001
     assert "警告（1）" in rendered  # noqa: RUF001
