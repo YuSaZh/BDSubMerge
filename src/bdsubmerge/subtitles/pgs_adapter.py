@@ -6,6 +6,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from enum import IntEnum, StrEnum
 
+from bdsubmerge.cancellation import CancellationCheck, raise_if_cancelled
 from bdsubmerge.domain.timebase import MediaTick90k
 
 PG_MAGIC = b"PG"
@@ -62,8 +63,17 @@ class PgsDocument:
     packets: tuple[PgsPacket, ...]
     warnings: tuple[str, ...] = ()
 
-    def to_bytes(self) -> bytes:
-        return b"".join(packet.to_bytes() for packet in self.packets)
+    def to_bytes(
+        self,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> bytes:
+        serialized: list[bytes] = []
+        for packet in self.packets:
+            raise_if_cancelled(cancellation_check)
+            serialized.append(packet.to_bytes())
+        raise_if_cancelled(cancellation_check)
+        return b"".join(serialized)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +99,10 @@ def _validate_timestamp(value: int, *, field: str, packet_index: int) -> MediaTi
     return MediaTick90k(value)
 
 
-def _timeline_warnings(packets: Iterable[PgsPacket]) -> tuple[str, ...]:
+def _timeline_warnings(
+    packets: Iterable[PgsPacket],
+    cancellation_check: CancellationCheck | None = None,
+) -> tuple[str, ...]:
     warnings: list[str] = []
     previous_pts: MediaTick90k | None = None
     previous_nonzero_dts: MediaTick90k | None = None
@@ -97,6 +110,7 @@ def _timeline_warnings(packets: Iterable[PgsPacket]) -> tuple[str, ...]:
     known_types = {member.value for member in PgsSegmentType}
 
     for index, packet in enumerate(packets):
+        raise_if_cancelled(cancellation_check)
         if previous_pts is not None and packet.pts_90k < previous_pts:
             warnings.append(f"packet {index} has a non-monotonic PTS")
         previous_pts = packet.pts_90k
@@ -125,11 +139,16 @@ def _timeline_warnings(packets: Iterable[PgsPacket]) -> tuple[str, ...]:
     return tuple(warnings)
 
 
-def parse_sup(data: bytes) -> PgsDocument:
+def parse_sup(
+    data: bytes,
+    *,
+    cancellation_check: CancellationCheck | None = None,
+) -> PgsDocument:
     """Parse a complete SUP stream without decoding or rewriting segment payloads."""
     packets: list[PgsPacket] = []
     offset = 0
     while offset < len(data):
+        raise_if_cancelled(cancellation_check)
         remaining = len(data) - offset
         if remaining < PACKET_HEADER_SIZE:
             raise PgsParseError(
@@ -161,10 +180,17 @@ def parse_sup(data: bytes) -> PgsDocument:
         offset = packet_end
 
     immutable_packets = tuple(packets)
-    return PgsDocument(immutable_packets, _timeline_warnings(immutable_packets))
+    return PgsDocument(
+        immutable_packets,
+        _timeline_warnings(immutable_packets, cancellation_check),
+    )
 
 
-def estimate_sup_duration(document: PgsDocument) -> PgsDurationInfo:
+def estimate_sup_duration(
+    document: PgsDocument,
+    *,
+    cancellation_check: CancellationCheck | None = None,
+) -> PgsDurationInfo:
     """Estimate the display duration, preferring an explicit clear-screen PCS.
 
     A Presentation Composition Segment declares its object count at byte 10. A
@@ -174,10 +200,12 @@ def estimate_sup_duration(document: PgsDocument) -> PgsDurationInfo:
 
     if not document.packets:
         return PgsDurationInfo(None, None, None, True)
-    timestamps = tuple(packet.pts_90k for packet in document.packets)
+    timestamps: list[MediaTick90k] = []
     visible_content_seen = False
     clear_pts: list[MediaTick90k] = []
     for packet in document.packets:
+        raise_if_cancelled(cancellation_check)
+        timestamps.append(packet.pts_90k)
         if packet.segment_type != PgsSegmentType.PRESENTATION_COMPOSITION:
             continue
         if len(packet.payload) < 11:
@@ -215,29 +243,33 @@ def shift_sup(
     offset_90k: MediaTick90k,
     *,
     overflow_policy: TimestampOverflowPolicy = TimestampOverflowPolicy.ERROR,
+    cancellation_check: CancellationCheck | None = None,
 ) -> PgsDocument:
     """Shift PTS and DTS while leaving every segment payload unchanged."""
-    shifted = tuple(
-        replace(
-            packet,
-            pts_90k=_shift_timestamp(
-                packet.pts_90k,
-                offset_90k,
-                policy=overflow_policy,
-                field="PTS",
-                packet_index=index,
-            ),
-            dts_90k=_shift_timestamp(
-                packet.dts_90k,
-                offset_90k,
-                policy=overflow_policy,
-                field="DTS",
-                packet_index=index,
-            ),
+    shifted_packets: list[PgsPacket] = []
+    for index, packet in enumerate(document.packets):
+        raise_if_cancelled(cancellation_check)
+        shifted_packets.append(
+            replace(
+                packet,
+                pts_90k=_shift_timestamp(
+                    packet.pts_90k,
+                    offset_90k,
+                    policy=overflow_policy,
+                    field="PTS",
+                    packet_index=index,
+                ),
+                dts_90k=_shift_timestamp(
+                    packet.dts_90k,
+                    offset_90k,
+                    policy=overflow_policy,
+                    field="DTS",
+                    packet_index=index,
+                ),
+            )
         )
-        for index, packet in enumerate(document.packets)
-    )
-    warnings = document.warnings + _timeline_warnings(shifted)
+    shifted = tuple(shifted_packets)
+    warnings = document.warnings + _timeline_warnings(shifted, cancellation_check)
     return PgsDocument(shifted, tuple(dict.fromkeys(warnings)))
 
 
@@ -245,18 +277,21 @@ def append_sup_sources(
     sources: Sequence[PgsSource],
     *,
     overflow_policy: TimestampOverflowPolicy = TimestampOverflowPolicy.ERROR,
+    cancellation_check: CancellationCheck | None = None,
 ) -> PgsDocument:
     """Shift and append sources in caller-provided order without re-encoding."""
     packets: list[PgsPacket] = []
     warnings: list[str] = []
     for source_index, source in enumerate(sources):
+        raise_if_cancelled(cancellation_check)
         shifted = shift_sup(
             source.document,
             source.offset_90k,
             overflow_policy=overflow_policy,
+            cancellation_check=cancellation_check,
         )
         packets.extend(shifted.packets)
         prefix = source.label or f"source {source_index}"
         warnings.extend(f"{prefix}: {warning}" for warning in shifted.warnings)
-    warnings.extend(_timeline_warnings(packets))
+    warnings.extend(_timeline_warnings(packets, cancellation_check))
     return PgsDocument(tuple(packets), tuple(dict.fromkeys(warnings)))

@@ -14,6 +14,7 @@ from bdsubmerge.bdmv import (
     resolve_bdmv_layout,
     scan_playlists,
 )
+from bdsubmerge.cancellation import CancellationCheck, raise_if_cancelled
 from bdsubmerge.domain.models import PlaylistInfo
 from bdsubmerge.domain.timebase import MediaTick90k
 from bdsubmerge.mapping import (
@@ -96,7 +97,13 @@ class BdmvApplicationService:
     def __init__(self, *, playlist_adapter: PlaylistAdapter | None = None) -> None:
         self._playlist_adapter = playlist_adapter
 
-    def scan(self, request: ScanRequest) -> ScanResult:
+    def scan(
+        self,
+        request: ScanRequest,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> ScanResult:
+        raise_if_cancelled(cancellation_check)
         record_runtime_event(
             "bdmv_scan_started",
             selected_path=str(request.selected_path),
@@ -111,7 +118,13 @@ class BdmvApplicationService:
                 selected_path=str(request.selected_path),
             )
             return ScanResult(None, (), (_error("bdmv_resolution_failed", str(error)),))
-        playlists = scan_playlists(layout, adapter=self._playlist_adapter)
+        raise_if_cancelled(cancellation_check)
+        playlists = scan_playlists(
+            layout,
+            adapter=self._playlist_adapter,
+            cancellation_check=cancellation_check,
+        )
+        raise_if_cancelled(cancellation_check)
         ranked = rank_playlists(
             playlists,
             RankingContext(
@@ -121,6 +134,7 @@ class BdmvApplicationService:
                 request.subtitle_count,
             ),
         )
+        raise_if_cancelled(cancellation_check)
         issues: list[ApplicationIssue] = []
         if not ranked:
             issues.append(_error("no_playlists", "no MPLS playlists could be scanned"))
@@ -176,7 +190,13 @@ class SubtitleApplicationService:
     def __init__(self, *, read_bytes: BinaryReader | None = None) -> None:
         self._read_bytes = read_bytes or _read_bytes
 
-    def load_ordered(self, request: LoadSubtitlesRequest) -> LoadSubtitlesResult:
+    def load_ordered(
+        self,
+        request: LoadSubtitlesRequest,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> LoadSubtitlesResult:
+        raise_if_cancelled(cancellation_check)
         record_runtime_event(
             "subtitle_load_started",
             sources=tuple(str(source.path) for source in request.sources),
@@ -186,9 +206,15 @@ class SubtitleApplicationService:
         assets: list[SubtitleAsset] = []
         issues: list[ApplicationIssue] = []
         for source in request.sources:
+            raise_if_cancelled(cancellation_check)
             if source.path.suffix.casefold() == ".sup":
                 try:
-                    document = parse_sup(self._read_bytes(source.path))
+                    data = self._read_bytes(source.path)
+                    raise_if_cancelled(cancellation_check)
+                    document = parse_sup(
+                        data,
+                        cancellation_check=cancellation_check,
+                    )
                 except (OSError, ValueError) as error:
                     record_runtime_exception(
                         "subtitle_load_failed",
@@ -197,7 +223,10 @@ class SubtitleApplicationService:
                     )
                     issues.append(_error("subtitle_load_failed", str(error), str(source.path)))
                     continue
-                duration = estimate_sup_duration(document)
+                duration = estimate_sup_duration(
+                    document,
+                    cancellation_check=cancellation_check,
+                )
                 effective_end = duration.effective_end_90k
                 if effective_end is None or effective_end <= 0:
                     issues.append(
@@ -229,15 +258,22 @@ class SubtitleApplicationService:
                         )
                     )
                 for warning in document.warnings:
+                    raise_if_cancelled(cancellation_check)
                     issues.append(_warning("sup_structure_warning", warning, str(source.path)))
                 continue
             try:
+                data = self._read_bytes(source.path)
+                raise_if_cancelled(cancellation_check)
                 loaded = load_text_subtitle(
-                    self._read_bytes(source.path),
+                    data,
                     name=source.path.name,
                     encoding=source.encoding,
+                    cancellation_check=cancellation_check,
                 )
-                analysis = analyze_text_subtitle(loaded.document)
+                analysis = analyze_text_subtitle(
+                    loaded.document,
+                    cancellation_check=cancellation_check,
+                )
             except UnsupportedSubtitleFormatError as error:
                 record_runtime_exception(
                     "subtitle_load_failed",
@@ -281,7 +317,9 @@ class SubtitleApplicationService:
                     loaded.bom,
                 )
             )
+            raise_if_cancelled(cancellation_check)
 
+        raise_if_cancelled(cancellation_check)
         formats = {asset.format for asset in assets}
         if len(formats) > 1:
             issues.append(
@@ -308,7 +346,13 @@ class SubtitleApplicationService:
 
 
 class MergeApplicationService:
-    def prepare(self, request: PrepareMergeRequest) -> PreparedMerge:
+    def prepare(
+        self,
+        request: PrepareMergeRequest,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> PreparedMerge:
+        raise_if_cancelled(cancellation_check)
         record_runtime_event(
             "merge_prepare_started",
             bdmv_path=str(request.layout.bdmv_path),
@@ -328,6 +372,7 @@ class MergeApplicationService:
             return PreparedMerge(None, None, None, None, tuple(issues))
 
         try:
+            raise_if_cancelled(cancellation_check)
             tolerance_90k = MediaTick90k(request.boundary_tolerance_90k)
             automatic_boundaries = build_playlist_boundaries(
                 request.playlist,
@@ -367,6 +412,7 @@ class MergeApplicationService:
                 locks=locks,
                 config=request.mapping_config,
             )
+            raise_if_cancelled(cancellation_check)
         except (MappingError, ValueError) as error:
             record_runtime_exception(
                 "merge_mapping_failed",
@@ -385,11 +431,13 @@ class MergeApplicationService:
             )
 
         context = request.output_context or _output_context(request)
+        raise_if_cancelled(cancellation_check)
         output_preflight = preflight_outputs(
             request.output_targets,
             context,
             require_existing_sources=request.require_existing_sources,
         )
+        raise_if_cancelled(cancellation_check)
         if request.report_target is not None and any(
             target.target_id == REPORT_TARGET_ID for target in request.output_targets
         ):
@@ -412,7 +460,12 @@ class MergeApplicationService:
             )
 
         try:
-            payload, report = _merge_payload(request, mapping)
+            payload, report = _merge_payload(
+                request,
+                mapping,
+                cancellation_check=cancellation_check,
+            )
+            raise_if_cancelled(cancellation_check)
         except (MergeConflictError, PgsTimestampOverflowError, TypeError, ValueError) as error:
             record_runtime_exception(
                 "merge_payload_failed",
@@ -424,6 +477,7 @@ class MergeApplicationService:
             report = None
         if report is not None:
             for notice in report.notices:
+                raise_if_cancelled(cancellation_check)
                 severity = (
                     ApplicationSeverity.ERROR
                     if notice.severity == "error"
@@ -443,6 +497,7 @@ class MergeApplicationService:
         report_preflight: PreflightResult | None = None
         report_payload: str | None = None
         if report is not None and request.report_target is not None:
+            raise_if_cancelled(cancellation_check)
             report_preflight = preflight_merge_report(
                 request.report_target,
                 bdmv_path=request.layout.bdmv_path,
@@ -453,6 +508,7 @@ class MergeApplicationService:
                 ),
                 subtitle_outputs=output_preflight.outputs,
             )
+            raise_if_cancelled(cancellation_check)
             issues.extend(_preflight_application_issues(report_preflight, "report"))
             if report_preflight.outputs:
                 execution_report = _execution_report(
@@ -466,6 +522,7 @@ class MergeApplicationService:
                 report_payload = execution_report.serialize(
                     request.report_target.report_format
                 )
+                raise_if_cancelled(cancellation_check)
         record_runtime_event(
             "merge_prepared",
             playlist_path=str(request.playlist.path),
@@ -519,7 +576,13 @@ class MergeApplicationService:
             report_payload,
         )
 
-    def execute(self, request: ExecuteMergeRequest) -> ExecuteMergeResult:
+    def execute(
+        self,
+        request: ExecuteMergeRequest,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> ExecuteMergeResult:
+        raise_if_cancelled(cancellation_check)
         prepared = request.prepared
         if not prepared.ready:
             return ExecuteMergeResult(
@@ -545,7 +608,11 @@ class MergeApplicationService:
             )
             payloads[REPORT_TARGET_ID] = prepared.report_payload
         try:
-            receipt = write_outputs_atomically(combined_preflight, payloads)
+            receipt = write_outputs_atomically(
+                combined_preflight,
+                payloads,
+                cancellation_check=cancellation_check,
+            )
         except (OSError, OutputPreflightError) as error:
             record_runtime_exception(
                 "merge_write_failed",
@@ -669,8 +736,12 @@ def build_playlist_boundaries(
 
 
 def _merge_payload(
-    request: PrepareMergeRequest, mapping: MappingResult
+    request: PrepareMergeRequest,
+    mapping: MappingResult,
+    *,
+    cancellation_check: CancellationCheck | None = None,
 ) -> tuple[str | bytes, MergeReport]:
+    raise_if_cancelled(cancellation_check)
     options = request.merge_options or MergeOptions(
         playlist_end_ticks=int(request.playlist.duration_90k)
     )
@@ -687,8 +758,14 @@ def _merge_payload(
                 request.subtitles.assets, mapping.mappings, strict=True
             )
         )
-        ass_result = merge_ass(MergePlan(sources, options))
-        return replace(ass_result.document, bom=False).serialize(), ass_result.report
+        ass_result = merge_ass(
+            MergePlan(sources, options),
+            cancellation_check=cancellation_check,
+        )
+        payload = replace(ass_result.document, bom=False).serialize(
+            cancellation_check=cancellation_check
+        )
+        return payload, ass_result.report
     if request.subtitles.format is SubtitleFormat.SRT:
         srt_sources = tuple(
             MergeSource(
@@ -700,8 +777,17 @@ def _merge_payload(
                 request.subtitles.assets, mapping.mappings, strict=True
             )
         )
-        srt_result = merge_srt(MergePlan(srt_sources, options))
-        return srt_result.document.serialize(bom=False), srt_result.report
+        srt_result = merge_srt(
+            MergePlan(srt_sources, options),
+            cancellation_check=cancellation_check,
+        )
+        return (
+            srt_result.document.serialize(
+                bom=False,
+                cancellation_check=cancellation_check,
+            ),
+            srt_result.report,
+        )
     if request.subtitles.format is SubtitleFormat.SUP:
         pgs_sources = tuple(
             PgsSource(
@@ -713,7 +799,10 @@ def _merge_payload(
                 request.subtitles.assets, mapping.mappings, strict=True
             )
         )
-        document = append_sup_sources(pgs_sources)
+        document = append_sup_sources(
+            pgs_sources,
+            cancellation_check=cancellation_check,
+        )
         report = MergeReport(
             source_labels=tuple(source.label for source in pgs_sources),
             input_event_count=sum(len(source.document.packets) for source in pgs_sources),
@@ -724,7 +813,7 @@ def _merge_payload(
             ),
             metadata={"format": "sup", "duration_estimated": True},
         )
-        return document.to_bytes(), report
+        return document.to_bytes(cancellation_check=cancellation_check), report
     raise ValueError("unsupported or unresolved subtitle format")
 
 

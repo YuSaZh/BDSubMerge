@@ -7,6 +7,11 @@ import re
 from dataclasses import dataclass, replace
 from itertools import pairwise
 
+from bdsubmerge.cancellation import (
+    CancellationCheck,
+    cancellation_scope,
+    raise_if_cancelled,
+)
 from bdsubmerge.subtitles.ass_document import (
     AssDocument,
     AssEntry,
@@ -155,6 +160,7 @@ def _replace_structured_section(
     result: list[AssEntry] = []
     inserted = False
     for entry in section.entries:
+        raise_if_cancelled()
         if isinstance(entry, AssFormatLine):
             if not inserted:
                 result.append(replace(entry, fields=fields))
@@ -176,7 +182,9 @@ def _unknown_section_notices(
     seen: dict[str, tuple[str, ...]] = {}
     notices: list[MergeNotice] = []
     for source in sources:
+        raise_if_cancelled()
         for section in source.document.sections:
+            raise_if_cancelled()
             name = section.normalized_name
             if name in _CORE_SECTIONS or name in _KNOWN_MERGED_SECTIONS:
                 continue
@@ -210,6 +218,7 @@ def _parse_attachments(section: AssSection) -> tuple[_Attachment, ...]:
     current_name: str | None = None
     current_lines: list[str] = []
     for entry in section.entries:
+        raise_if_cancelled()
         line = entry.text if isinstance(entry, AssRawLine) else entry.serialize()
         if ":" in line and line.split(":", 1)[0].strip().casefold() in {"fontname", "filename"}:
             if current_name is not None:
@@ -238,11 +247,13 @@ def _merged_attachment_section(
     deduplicated = 0
     header = f"[{section_name.title()}]"
     for source in sources:
+        raise_if_cancelled()
         section = source.document.section(section_name)
         if section is None:
             continue
         header = section.header if not attachments else header
         for attachment in _parse_attachments(section):
+            raise_if_cancelled()
             matches = by_name.get(attachment.name.casefold(), [])
             if any(match.digest == attachment.digest for match in matches):
                 deduplicated += 1
@@ -284,12 +295,14 @@ def _merge_extradata(
     lines: list[str] = []
     header = "[Aegisub Extradata]"
     for source_index, source in enumerate(sources):
+        raise_if_cancelled()
         section = source.document.section("Aegisub Extradata")
         if section is None:
             continue
         header = section.header if not lines else header
         id_map: dict[int, int] = {}
         for entry in section.entries:
+            raise_if_cancelled()
             line = entry.text if isinstance(entry, AssRawLine) else entry.serialize()
             match = _EXTRADATA_RE.fullmatch(line)
             if match is None:
@@ -339,13 +352,25 @@ def _remap_event_extradata(event: AssEvent, id_map: dict[int, int]) -> AssEvent:
     return event.with_value("Extra", "".join(pieces))
 
 
-def merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
+def merge_ass(
+    plan: MergePlan[AssDocument],
+    *,
+    cancellation_check: CancellationCheck | None = None,
+) -> AssMergeResult:
     """Merge ASS/SSA sources without choosing or writing an output path."""
+
+    with cancellation_scope(cancellation_check):
+        return _merge_ass(plan)
+
+
+def _merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
+    raise_if_cancelled()
 
     sources = plan.sources
     base = sources[0].document
     notices: list[MergeNotice] = list(_unknown_section_notices(sources))
     for source in sources[1:]:
+        raise_if_cancelled()
         notices.extend(_script_info_notices(base, source))
     blocking = [notice for notice in notices if notice.severity == "error"]
     if blocking and not plan.options.accept_script_info_conflicts:
@@ -373,8 +398,10 @@ def merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
     dropped = 0
     clipped = 0
     for source in sources:
+        raise_if_cancelled()
         shifted_events: list[AssEvent] = []
         for event in source.document.events:
+            raise_if_cancelled()
             shifted, event_notices, was_clipped = _shift_ass_event(event, source, plan.options)
             notices.extend(event_notices)
             clipped += int(was_clipped)
@@ -415,6 +442,7 @@ def merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
         replacements["aegisub extradata"] = extradata_section
     attachment_deduplicated = 0
     for attachment_name in ("Fonts", "Graphics"):
+        raise_if_cancelled()
         attachment_section, deduplicated = _merged_attachment_section(
             sources, attachment_name, notices
         )
@@ -425,15 +453,19 @@ def merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
     sections: list[AssSection] = []
     emitted: set[str] = set()
     for section in base.sections:
+        raise_if_cancelled()
         replacement = replacements.get(section.normalized_name)
         sections.append(replacement or section)
         emitted.add(section.normalized_name)
     for key, section in replacements.items():
+        raise_if_cancelled()
         if key not in emitted:
             sections.append(section)
             emitted.add(key)
     for source in sources[1:]:
+        raise_if_cancelled()
         for section in source.document.sections:
+            raise_if_cancelled()
             if section.normalized_name not in _CORE_SECTIONS | _KNOWN_MERGED_SECTIONS:
                 sections.append(section)
 
@@ -451,13 +483,25 @@ def merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
     return AssMergeResult(document, report)
 
 
-def merge_srt(plan: MergePlan[SrtDocument]) -> SrtMergeResult:
+def merge_srt(
+    plan: MergePlan[SrtDocument],
+    *,
+    cancellation_check: CancellationCheck | None = None,
+) -> SrtMergeResult:
+    with cancellation_scope(cancellation_check):
+        return _merge_srt(plan)
+
+
+def _merge_srt(plan: MergePlan[SrtDocument]) -> SrtMergeResult:
+    raise_if_cancelled()
     cues: list[SrtCue] = []
     notices: list[MergeNotice] = []
     dropped = 0
     clipped = 0
     for source in plan.sources:
+        raise_if_cancelled()
         for cue in source.document.cues:
+            raise_if_cancelled()
             start = cue.start_ticks + source.offset_ticks
             end = cue.end_ticks + source.offset_ticks
             if end <= 0 and not plan.options.keep_events_ending_before_zero:
@@ -499,6 +543,7 @@ def merge_srt(plan: MergePlan[SrtDocument]) -> SrtMergeResult:
                 )
             cues.append(replace(cue, start_ticks=start, end_ticks=end))
     for previous, current in pairwise(cues):
+        raise_if_cancelled()
         if current.start_ticks < previous.end_ticks:
             notices.append(MergeNotice("warning", "cue_overlap", "SRT cues overlap"))
     base = plan.sources[0].document

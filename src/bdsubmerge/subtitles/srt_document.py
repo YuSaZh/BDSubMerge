@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, replace
 
+from bdsubmerge.cancellation import CancellationCheck, raise_if_cancelled
+
 TICKS_PER_MILLISECOND = 90
 
 
@@ -34,9 +36,15 @@ class SrtDocument:
     newline: str = "\r\n"
     bom: bool = True
 
-    def serialize(self, *, bom: bool | None = None) -> str:
+    def serialize(
+        self,
+        *,
+        bom: bool | None = None,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> str:
         lines: list[str] = []
         for index, cue in enumerate(self.cues, start=1):
+            raise_if_cancelled(cancellation_check)
             lines.append(str(index))
             timing = (
                 f"{format_srt_time(cue.start_ticks)} --> "
@@ -51,8 +59,16 @@ class SrtDocument:
         include_bom = self.bom if bom is None else bom
         return ("\ufeff" if include_bom else "") + text
 
-    def to_bytes(self, *, bom: bool | None = None) -> bytes:
-        return self.serialize(bom=bom).encode("utf-8")
+    def to_bytes(
+        self,
+        *,
+        bom: bool | None = None,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> bytes:
+        return self.serialize(
+            bom=bom,
+            cancellation_check=cancellation_check,
+        ).encode("utf-8")
 
 
 _SRT_TIME_RE = re.compile(
@@ -86,7 +102,11 @@ def format_srt_time(ticks: int, *, is_end: bool = False, start_ticks: int | None
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
-def parse_srt(text: str) -> SrtDocument:
+def parse_srt(
+    text: str,
+    *,
+    cancellation_check: CancellationCheck | None = None,
+) -> SrtDocument:
     bom = text.startswith("\ufeff")
     if bom:
         text = text[1:]
@@ -94,6 +114,7 @@ def parse_srt(text: str) -> SrtDocument:
     blocks = re.split(r"(?:\r?\n){2,}", text.strip()) if text.strip() else []
     cues: list[SrtCue] = []
     for block in blocks:
+        raise_if_cancelled(cancellation_check)
         lines = block.splitlines()
         if len(lines) < 2:
             raise SrtParseError("SRT cue must contain an index and timing line")

@@ -8,6 +8,12 @@ from threading import Event
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
+from bdsubmerge.cancellation import (
+    OperationCancelledError,
+    cancellation_scope,
+    raise_if_cancelled,
+)
+
 
 class CancellationToken:
     def __init__(self) -> None:
@@ -48,16 +54,15 @@ class ServiceTask[ResultT](QRunnable):
     @Slot()
     def run(self) -> None:
         try:
-            if self.token.is_cancelled():
-                self.signals.cancelled.emit()
-                return
-            self.signals.progress.emit(5, "started")
-            result = self.operation()
-            if self.token.is_cancelled():
-                self.signals.cancelled.emit()
-                return
-            self.signals.progress.emit(100, "complete")
-            self.signals.succeeded.emit(result)
+            with cancellation_scope(self.token.is_cancelled):
+                raise_if_cancelled()
+                self.signals.progress.emit(5, "started")
+                result = self.operation()
+                raise_if_cancelled()
+                self.signals.progress.emit(100, "complete")
+                self.signals.succeeded.emit(result)
+        except OperationCancelledError:
+            self.signals.cancelled.emit()
         except Exception as error:
             self.signals.failed.emit(str(error), traceback.format_exc())
         finally:

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from bdsubmerge.cancellation import CancellationCheck, raise_if_cancelled
+
 from .ass_document import AssDocument, parse_ass
 from .encoding import DecodedText, decode_subtitle
 from .srt_document import SrtDocument, parse_srt
@@ -42,13 +44,23 @@ def load_text_subtitle(
     *,
     name: str,
     encoding: str | None = None,
+    cancellation_check: CancellationCheck | None = None,
 ) -> LoadedTextSubtitle:
+    raise_if_cancelled(cancellation_check)
     subtitle_format = format_from_name(name)
     if subtitle_format is SubtitleFormat.SUP:
         raise UnsupportedSubtitleFormatError("SUP is a binary PGS format")
     decoded: DecodedText = decode_subtitle(data, encoding=encoding)
+    raise_if_cancelled(cancellation_check)
     if subtitle_format in {SubtitleFormat.ASS, SubtitleFormat.SSA}:
-        document: AssDocument | SrtDocument = parse_ass(decoded.text)
+        document: AssDocument | SrtDocument = parse_ass(
+            decoded.text,
+            cancellation_check=cancellation_check,
+        )
     else:
-        document = parse_srt(decoded.text)
+        document = parse_srt(
+            decoded.text,
+            cancellation_check=cancellation_check,
+        )
+    raise_if_cancelled(cancellation_check)
     return LoadedTextSubtitle(subtitle_format, document, decoded.encoding, decoded.bom)

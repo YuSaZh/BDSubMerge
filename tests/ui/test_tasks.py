@@ -4,6 +4,7 @@ from threading import Event
 from PySide6.QtCore import QSettings, Qt, QThreadPool
 from pytestqt.qtbot import QtBot
 
+from bdsubmerge.cancellation import raise_if_cancelled
 from bdsubmerge.ui.main_window import MainWindow
 from bdsubmerge.ui.tasks import CancellationToken, ServiceTask
 
@@ -37,6 +38,26 @@ def test_cancelled_task_does_not_run_operation(qtbot: QtBot) -> None:
         QThreadPool.globalInstance().start(task)
 
     assert called is False
+
+
+def test_running_service_task_exposes_token_to_operation_checkpoints(qtbot: QtBot) -> None:
+    started = Event()
+    resume = Event()
+    token = CancellationToken()
+
+    def operation() -> str:
+        started.set()
+        resume.wait(timeout=3)
+        raise_if_cancelled()
+        return "unexpected"
+
+    task: ServiceTask[str] = ServiceTask(operation, token=token)
+    QThreadPool.globalInstance().start(task)
+    qtbot.waitUntil(started.is_set, timeout=3000)
+
+    with qtbot.waitSignal(task.signals.cancelled, timeout=3000):
+        token.cancel()
+        resume.set()
 
 
 def test_ac09_window_remains_responsive_and_cancel_suppresses_success(

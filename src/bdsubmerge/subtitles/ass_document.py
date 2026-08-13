@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, replace
 
+from bdsubmerge.cancellation import CancellationCheck, raise_if_cancelled
+
 TICKS_PER_CENTISECOND = 900
 
 
@@ -188,9 +190,14 @@ class AssSection:
     def normalized_name(self) -> str:
         return self.name.strip().casefold()
 
-    def serialize_lines(self) -> tuple[str, ...]:
+    def serialize_lines(
+        self,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> tuple[str, ...]:
         lines = [self.header]
         for entry in self.entries:
+            raise_if_cancelled(cancellation_check)
             if isinstance(entry, AssRawLine):
                 lines.append(entry.text)
             else:
@@ -240,18 +247,33 @@ class AssDocument:
             return ()
         return tuple(entry for entry in section.entries if isinstance(entry, AssKeyValue))
 
-    def serialize(self) -> str:
+    def serialize(
+        self,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> str:
         lines = list(self.preamble)
         for section in self.sections:
-            lines.extend(section.serialize_lines())
+            raise_if_cancelled(cancellation_check)
+            lines.extend(
+                section.serialize_lines(cancellation_check=cancellation_check)
+            )
         text = self.newline.join(lines)
         if self.trailing_newline:
             text += self.newline
         return ("\ufeff" if self.bom else "") + text
 
-    def to_bytes(self, *, encoding: str = "utf-8", bom: bool | None = None) -> bytes:
+    def to_bytes(
+        self,
+        *,
+        encoding: str = "utf-8",
+        bom: bool | None = None,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> bytes:
         include_bom = self.bom if bom is None else bom
-        text = replace(self, bom=False).serialize()
+        text = replace(self, bom=False).serialize(
+            cancellation_check=cancellation_check
+        )
         if encoding.casefold().replace("_", "-") == "utf-8":
             return ((b"\xef\xbb\xbf" if include_bom else b"") + text.encode("utf-8"))
         return text.encode(encoding)
@@ -304,11 +326,16 @@ def _parse_record_values(payload: str, fields: tuple[str, ...]) -> tuple[str, ..
     return values
 
 
-def _parse_section_entries(name: str, lines: list[str]) -> tuple[AssEntry, ...]:
+def _parse_section_entries(
+    name: str,
+    lines: list[str],
+    cancellation_check: CancellationCheck | None = None,
+) -> tuple[AssEntry, ...]:
     normalized = name.strip().casefold()
     active_format: tuple[str, ...] | None = None
     result: list[AssEntry] = []
     for line in lines:
+        raise_if_cancelled(cancellation_check)
         parts = _prefix_parts(line)
         if parts is None:
             result.append(AssRawLine(line))
@@ -351,7 +378,11 @@ def _parse_section_entries(name: str, lines: list[str]) -> tuple[AssEntry, ...]:
     return tuple(result)
 
 
-def parse_ass(text: str) -> AssDocument:
+def parse_ass(
+    text: str,
+    *,
+    cancellation_check: CancellationCheck | None = None,
+) -> AssDocument:
     """Parse ASS/SSA without discarding unrecognized sections or records."""
 
     lines, newline, trailing_newline, bom = _split_lines(text)
@@ -359,6 +390,7 @@ def parse_ass(text: str) -> AssDocument:
     raw_sections: list[tuple[str, str, list[str]]] = []
     current: tuple[str, str, list[str]] | None = None
     for line in lines:
+        raise_if_cancelled(cancellation_check)
         section_match = _SECTION_RE.fullmatch(line)
         if section_match is not None:
             current = (section_match.group("name"), line, [])
@@ -367,8 +399,14 @@ def parse_ass(text: str) -> AssDocument:
             preamble.append(line)
         else:
             current[2].append(line)
-    sections = tuple(
-        AssSection(name, header, _parse_section_entries(name, body))
-        for name, header, body in raw_sections
-    )
-    return AssDocument(tuple(preamble), sections, newline, trailing_newline, bom)
+    sections: list[AssSection] = []
+    for name, header, body in raw_sections:
+        raise_if_cancelled(cancellation_check)
+        sections.append(
+            AssSection(
+                name,
+                header,
+                _parse_section_entries(name, body, cancellation_check),
+            )
+        )
+    return AssDocument(tuple(preamble), tuple(sections), newline, trailing_newline, bom)

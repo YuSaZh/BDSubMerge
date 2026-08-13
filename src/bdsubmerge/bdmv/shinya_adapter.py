@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from bdsubmerge.bdmv.timeline import RawPlayItem, RawPlaylistMark, build_playlist
+from bdsubmerge.cancellation import (
+    CancellationCheck,
+    OperationCancelledError,
+    cancellation_scope,
+    raise_if_cancelled,
+)
 from bdsubmerge.domain.models import BdmvLayout, PgStreamInfo, PlaylistInfo
 from bdsubmerge.domain.timebase import MediaTick90k
 
@@ -189,26 +195,33 @@ class ShinyaPlaylistAdapter:
         *,
         selected_angles: Mapping[int, int] | None = None,
     ) -> PlaylistInfo:
+        raise_if_cancelled()
         parser = self._parser_factory(str(path))
+        raise_if_cancelled()
         data = _parser_data(parser)
         playlist = _playlist_section(data)
-        raw_items = tuple(
-            _raw_item(item, (selected_angles or {}).get(index, 0))
-            for index, item in enumerate(
-                _sequence(playlist, "PlayItems", "play_items", "PlayItem")
+        raw_items_list: list[RawPlayItem] = []
+        for index, item in enumerate(
+            _sequence(playlist, "PlayItems", "play_items", "PlayItem")
+        ):
+            raise_if_cancelled()
+            raw_items_list.append(
+                _raw_item(item, (selected_angles or {}).get(index, 0))
             )
-        )
+        raw_items = tuple(raw_items_list)
         mark_section = _mark_section(data)
-        raw_marks = tuple(
-            _raw_mark(mark)
-            for mark in _sequence(
-                mark_section,
-                "PlayListMarks",
-                "PlaylistMarks",
-                "playlist_marks",
-                "marks",
-            )
-        )
+        raw_marks_list: list[RawPlaylistMark] = []
+        for mark in _sequence(
+            mark_section,
+            "PlayListMarks",
+            "PlaylistMarks",
+            "playlist_marks",
+            "marks",
+        ):
+            raise_if_cancelled()
+            raw_marks_list.append(_raw_mark(mark))
+        raw_marks = tuple(raw_marks_list)
+        raise_if_cancelled()
         return build_playlist(
             path,
             raw_items,
@@ -233,24 +246,29 @@ def scan_playlists(
     layout: BdmvLayout,
     *,
     adapter: PlaylistParser | None = None,
+    cancellation_check: CancellationCheck | None = None,
 ) -> tuple[PlaylistInfo, ...]:
     """Parse each MPLS independently so one malformed file cannot abort a scan."""
+    raise_if_cancelled(cancellation_check)
     parser = adapter or ShinyaPlaylistAdapter()
     try:
-        paths = sorted(
-            (
-                path
-                for path in layout.playlist_path.iterdir()
-                if path.is_file() and path.suffix.casefold() == ".mpls"
-            ),
-            key=lambda path: path.name.casefold(),
-        )
+        paths: list[Path] = []
+        for path in layout.playlist_path.iterdir():
+            raise_if_cancelled(cancellation_check)
+            if path.is_file() and path.suffix.casefold() == ".mpls":
+                paths.append(path)
+        paths.sort(key=lambda path: path.name.casefold())
     except (OSError, PermissionError):
         return ()
     results: list[PlaylistInfo] = []
     for path in paths:
+        raise_if_cancelled(cancellation_check)
         try:
-            results.append(parser.parse(path, layout))
+            with cancellation_scope(cancellation_check):
+                results.append(parser.parse(path, layout))
+        except OperationCancelledError:
+            raise
         except Exception as error:
             results.append(_unavailable(path, error))
+        raise_if_cancelled(cancellation_check)
     return tuple(results)

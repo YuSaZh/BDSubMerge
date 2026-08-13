@@ -8,6 +8,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from bdsubmerge.cancellation import (
+    CancellationCheck,
+    OperationCancelledError,
+    raise_if_cancelled,
+)
+
 from .models import (
     AtomicWriteError,
     CollisionPolicy,
@@ -18,6 +24,7 @@ from .models import (
 
 Payload = bytes | str
 Validator = Callable[[Path, ResolvedOutput], None]
+_WRITE_CHUNK_SIZE = 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,9 +38,11 @@ def write_outputs_atomically(
     payloads: Mapping[str, Payload],
     *,
     validator: Validator | None = None,
+    cancellation_check: CancellationCheck | None = None,
 ) -> WriteReceipt:
     """Stage every output, validate all stages, then commit or roll back the whole set."""
 
+    raise_if_cancelled(cancellation_check)
     outputs = preflight.require_ready()
     expected_ids = {output.target_id for output in outputs}
     if set(payloads) != expected_ids:
@@ -49,21 +58,30 @@ def write_outputs_atomically(
     backups: list[Path] = []
     try:
         for output in outputs:
-            staged[output.target_id] = _stage(output, payloads[output.target_id])
+            raise_if_cancelled(cancellation_check)
+            staged[output.target_id] = _stage(
+                output,
+                payloads[output.target_id],
+                cancellation_check,
+            )
         for output in outputs:
+            raise_if_cancelled(cancellation_check)
             stage_path = staged[output.target_id]
             if validator is not None:
                 validator(stage_path, output)
             elif not stage_path.is_file():
                 raise AtomicWriteError(f"staged output disappeared: {stage_path}")
+            raise_if_cancelled(cancellation_check)
 
         # Re-check collision assumptions immediately before moving any existing destination.
         for output in outputs:
+            raise_if_cancelled(cancellation_check)
             if output.collision_policy in (CollisionPolicy.ABORT, CollisionPolicy.AUTO_RENAME):
                 if output.path.exists():
                     raise AtomicWriteError(f"destination appeared after preflight: {output.path}")
 
         for output in outputs:
+            raise_if_cancelled(cancellation_check)
             if not output.path.exists():
                 continue
             if output.collision_policy is CollisionPolicy.BACKUP:
@@ -82,11 +100,14 @@ def write_outputs_atomically(
                 )
                 output.path.replace(rollback_path)
                 rollback[output.target_id] = rollback_path
+            raise_if_cancelled(cancellation_check)
 
         for output in outputs:
+            raise_if_cancelled(cancellation_check)
             staged[output.target_id].replace(output.path)
             committed.append(output)
             _sync_directory(output.path.parent)
+            raise_if_cancelled(cancellation_check)
         for output in outputs:
             saved_original = rollback.get(output.target_id)
             if (
@@ -100,7 +121,10 @@ def write_outputs_atomically(
         )
     except Exception as error:
         _rollback(outputs, committed, rollback)
-        if isinstance(error, AtomicWriteError | OutputPreflightError):
+        if isinstance(
+            error,
+            AtomicWriteError | OperationCancelledError | OutputPreflightError,
+        ):
             raise
         raise AtomicWriteError(f"atomic output transaction failed: {error}") from error
     finally:
@@ -115,15 +139,24 @@ def write_outputs_atomically(
                 _safe_unlink(pending_original)
 
 
-def _stage(output: ResolvedOutput, payload: Payload) -> Path:
+def _stage(
+    output: ResolvedOutput,
+    payload: Payload,
+    cancellation_check: CancellationCheck | None,
+) -> Path:
     descriptor, name = tempfile.mkstemp(
         prefix=f".{output.path.name}.", suffix=".tmp", dir=output.path.parent
     )
     path = Path(name)
     try:
         with os.fdopen(descriptor, "wb") as stream:
+            raise_if_cancelled(cancellation_check)
             data = payload.encode(output.encoding) if isinstance(payload, str) else payload
-            stream.write(data)
+            view = memoryview(data)
+            for offset in range(0, len(view), _WRITE_CHUNK_SIZE):
+                raise_if_cancelled(cancellation_check)
+                stream.write(view[offset : offset + _WRITE_CHUNK_SIZE])
+            raise_if_cancelled(cancellation_check)
             stream.flush()
             os.fsync(stream.fileno())
     except Exception:
