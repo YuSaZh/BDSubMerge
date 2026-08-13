@@ -40,6 +40,9 @@
 - run `31674853072` 的源码包、Ubuntu/Windows Ruff 与 Mypy 均通过；两平台 Pytest 唯一失败均为 `test_adding_directory_preserves_manual_order_and_appends_naturally` 的 `load_ordered` 测试替身未接受新增 `cancellation_check` 关键字。Ubuntu 为 254 项中 1 失败、2 跳过，Windows 为 254 项中 1 失败；Windows 真实 SMB/UNC 建立和清理正常，截图因 Pytest 失败而跳过。
 - commit `251424a` / run `31675293315` 已闭环实际任务进度批次：源码包、双平台 Ruff/Mypy/Pytest、真实 Windows SMB/UNC 和四态 UI 截图均通过。JUnit 为 Ubuntu 254 项（2 skipped）和 Windows 254 项；coverage XML 行覆盖率分别为 87.05% 与 87.03%，终端综合覆盖率为 83.31%。四张截图哈希互异，人工审计无重叠、截断或 CJK 缺字。
 - 当前详情批次已静态补齐播放列表结构、源字幕详情、输出目标完整字段，以及预计事件/样式/警告摘要；未跟踪新文件不会出现在普通 `git diff` 中，提交前必须显式读取并在暂存后用 `git diff --cached` 复核。
+- commit `64e22a3` / run `31679107948` 已闭环详情与输出摘要批次：源码包、双平台 Ruff/Mypy/Pytest、真实 Windows UNC 和 Linux 四态截图矩阵全部通过。JUnit 为 Ubuntu 261 项（2 skipped）和 Windows 261 项；coverage XML 行覆盖率为 87.06%/87.04%。四张截图哈希互异，人工审计无重叠、截断或 CJK 缺字，完整 7 列输出摘要与事件/样式/警告统计均可见。
+- `64e22a3` 的 Windows Package run `31679478339` 已通过 x64 onedir、许可证闭包、ZIP/SHA256、中文空格路径解压和无 Python 环境 EXE 烟测。artifact `9172908967` 包含 57,029,081 字节、314 个条目的 ZIP，SHA256 `662078ec309a867a5e443e12899c5290e2910e1f21f33f3d40fbae08e6265f2a` 与清单一致；它仍是 `0.1.0.dev0` 基线包，不是 1.0 最终候选。
+- 发布前静态审计确认输出目标目录可被 collision 流程误处理、业务写入失败可被 GUI 显示为完成、普通会话未复核加载时源指纹。本批同时在共享应用/输出层修复，确保 CLI 与 GUI 使用同一安全契约；warning 确认和项目重定位仍为后续独立批次。
 
 ## 技术决策
 | 决策 | 理由 |

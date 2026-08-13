@@ -66,6 +66,19 @@ def test_mixed_formats_are_a_graceful_blocking_result() -> None:
     assert "mixed_subtitle_formats" in {issue.code for issue in mixed.issues}
 
 
+def test_real_subtitle_load_captures_source_fingerprint(tmp_path: Path) -> None:
+    subtitle = tmp_path / "episode.ass"
+    subtitle.write_bytes(ASS)
+
+    result = SubtitleApplicationService().load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle),))
+    )
+
+    assert result.ready is True
+    assert result.assets[0].source_fingerprint is not None
+    assert result.assets[0].source_fingerprint.size == len(ASS)
+
+
 def test_sup_is_loaded_with_estimated_duration_warning() -> None:
     service = SubtitleApplicationService(read_bytes=lambda path: SUP)
 

@@ -8,6 +8,7 @@ from bdsubmerge.domain.models import (
     PlaylistInfo,
     PlaylistMarkInfo,
     ReferenceStatus,
+    SourceFingerprint,
 )
 from bdsubmerge.domain.timebase import MediaTick90k
 
@@ -20,4 +21,5 @@ __all__ = [
     "PlaylistInfo",
     "PlaylistMarkInfo",
     "ReferenceStatus",
+    "SourceFingerprint",
 ]

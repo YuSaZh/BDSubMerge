@@ -86,12 +86,24 @@ def write_outputs_atomically(
         # Re-check collision assumptions immediately before moving any existing destination.
         for output in outputs:
             raise_if_cancelled(cancellation_check)
+            if output.path.is_symlink() or (
+                output.path.exists() and not output.path.is_file()
+            ):
+                raise AtomicWriteError(
+                    f"existing output destination is not a regular file: {output.path}"
+                )
             if output.collision_policy in (CollisionPolicy.ABORT, CollisionPolicy.AUTO_RENAME):
                 if output.path.exists():
                     raise AtomicWriteError(f"destination appeared after preflight: {output.path}")
 
         for output in outputs:
             raise_if_cancelled(cancellation_check)
+            if output.path.is_symlink() or (
+                output.path.exists() and not output.path.is_file()
+            ):
+                raise AtomicWriteError(
+                    f"existing output destination is not a regular file: {output.path}"
+                )
             if not output.path.exists():
                 continue
             if output.collision_policy is CollisionPolicy.BACKUP:

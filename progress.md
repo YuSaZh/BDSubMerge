@@ -3,7 +3,7 @@
 ## 会话：2026-08-13
 
 ### 详情与输出摘要批次
-- **状态：** in_progress
+- **状态：** complete
 - 继续开发时已核对 `main` / `origin/main` 均为 `251424a`；除三份规划文件外无未提交改动。
 - 本批将按任务书原文接入已有 Qt 无关展示模型，补齐播放列表结构、源字幕详情及预计事件/样式/警告摘要；本地不执行任何构建或测试。
 - 已实现播放列表双击/右键结构详情、字幕双击/右键源详情和双语只读详情窗口；GUI 仅消费应用层展示投影，不重新解析源文件。
@@ -12,6 +12,16 @@
 - 字幕详情按表格路径定位重排后的资产，并纳入该文件对应的应用层 warning；已补合并报告、ASS、翻译、GUI 详情、输出摘要及远程截图断言。
 - 播放列表详情补齐多角度、Mark 源字段和时间线指纹，并将已知推荐依据及 MPLS 诊断映射为双语展示；未知诊断保留原文，避免丢失信息。
 - 本地静态检查确认编辑过的 Python 文件无超过 100 字符的行、双语 JSON 各 224 个键且集合/占位符一致、`git diff --check` 通过；等待提交并由 GitHub Actions 执行验证。
+- 提交 `64e22a3` / run `31679107948` 已全绿：源码包、Ubuntu/Windows Ruff、Mypy、Pytest、真实 Windows UNC 和 Linux UI 截图矩阵全部通过。
+- 下载并审计 artifacts `9172753453`、`9172741310`、`9172740974`：Ubuntu 261 项（2 skipped）、Windows 261 项，均为 0 failures / 0 errors；coverage XML 行覆盖率为 87.06%/87.04%。四张截图哈希互异，目视无重叠、截断或 CJK 缺字，新增完整输出摘要在中英文和高 DPI 画面中可见。
+
+### 发布安全阻断项批次
+- **状态：** in_progress
+- 当前绿色基线 `64e22a3` 的 Windows Package run `31679478339` 已成功；远程完成 x64 onedir、许可证闭包、ZIP/SHA256、中文空格路径解压和无 Python EXE 烟测。
+- 已静态审计 artifact `9172908967`：ZIP 为 57,029,081 字节、314 个条目且只有 `BDSubMerge/` 顶层；EXE、双语资源、项目/Qt/Python/安装依赖许可证及 manifest 全部存在，SHA256 与远程清单精确一致。
+- 当前源码批次拒绝将目录、链接或其他非普通文件作为字幕输出目标，并在原子提交前再次防御预检后竞态，避免 `BACKUP/OVERWRITE` 移动目录。
+- GUI 生成结果 `succeeded=False` 时现在保留失败终态和错误详情，不再显示“写入 0 个文件”或被 finished signal 覆盖为完成。
+- 真实 BDMV 扫描与字幕加载捕获 size/mtime 指纹，prepare 与 execute 均复核 `index.bdmv`、MPLS 和字幕源；加载期间或预检后变化都会阻断写入。已补对应远程回归测试，本机未执行。
 
 ### M0-M4 基线
 - **状态：** complete
@@ -86,6 +96,8 @@
 | 31675293315 | 完整 CI | `251424a` 源码包、双平台 Ruff/Mypy/Pytest、真实 Windows SMB/UNC、四态截图与 artifact 全部通过 | pass |
 | 31678423407 | 完整 CI | `4cd77f7` 源码包成功；双平台 Ruff 同报 `test_details.py` 中文全角标点 RUF001，Mypy/Pytest/截图未运行 | fail |
 | 31678761361 | 完整 CI | `8d4bfca` 源码包成功；双平台 Ruff 暴露余下 9 个中文全角标点 RUF001，后续阶段未运行 | fail |
+| 31679107948 | 完整 CI | `64e22a3` 源码包、双平台 Ruff/Mypy/Pytest、真实 Windows UNC、四态 UI 截图与 artifact 全部通过 | pass |
+| 31679478339 | Windows Package | `64e22a3` x64 onedir、许可证、ZIP/SHA256、中文空格路径无 Python EXE 烟测与 artifact 全部通过 | pass |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |

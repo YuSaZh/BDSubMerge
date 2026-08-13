@@ -63,6 +63,22 @@ def test_backup_policy_preserves_previous_destination(tmp_path: Path) -> None:
     assert receipt.backups[0].read_bytes() == b"old"
 
 
+def test_directory_appearing_after_preflight_is_never_moved(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "index.ass"
+    target = FullPathOutputTarget("target", CollisionPolicy.BACKUP, path=destination)
+    preflight = preflight_outputs((target,), OutputContext(subtitle_format="ass"))
+    destination.mkdir()
+
+    with pytest.raises(AtomicWriteError, match="not a regular file"):
+        write_outputs_atomically(preflight, {"target": b"new"})
+
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    assert not (tmp_path / "index.ass.bak").exists()
+
+
 def test_validation_failure_leaves_no_outputs_or_temporary_files(tmp_path: Path) -> None:
     targets = (
         FullPathOutputTarget("first", path=tmp_path / "first.srt"),

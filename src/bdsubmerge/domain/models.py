@@ -9,6 +9,18 @@ from pathlib import Path
 from bdsubmerge.domain.timebase import MediaTick90k
 
 
+@dataclass(frozen=True, slots=True)
+class SourceFingerprint:
+    """Cheap file identity captured without reading source contents."""
+
+    size: int
+    mtime_ns: int
+
+    def __post_init__(self) -> None:
+        if self.size < 0 or self.mtime_ns < 0:
+            raise ValueError("source fingerprint values cannot be negative")
+
+
 class PlaylistConfidence(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
@@ -35,6 +47,7 @@ class BdmvLayout:
     playlist_path: Path
     clipinf_path: Path
     stream_path: Path
+    index_fingerprint: SourceFingerprint | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +105,7 @@ class PlaylistInfo:
     confidence: PlaylistConfidence = PlaylistConfidence.LOW
     recommendation_reasons: tuple[str, ...] = ()
     timeline_fingerprint: TimelineFingerprint = ()
+    source_fingerprint: SourceFingerprint | None = None
 
     @property
     def is_available(self) -> bool:

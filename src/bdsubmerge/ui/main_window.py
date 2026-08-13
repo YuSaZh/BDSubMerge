@@ -2884,6 +2884,10 @@ class MainWindow(QMainWindow):
     def _generate_finished(self, value: object) -> None:
         result = cast(ExecuteMergeResult, value)
         self._record_issues(result.issues)
+        if not result.succeeded:
+            self.task_failed = True
+            self.task_status.setText(self.translations.text("task.failed"))
+            return
         count = len(result.receipt.paths) if result.receipt is not None else 0
         self.statusBar().showMessage(self.translations.text("status.written", count=count), 8000)
 

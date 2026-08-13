@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import cast
 from bdsubmerge import __version__
 from bdsubmerge.bdmv import (
     RankingContext,
+    ShinyaPlaylistAdapter,
     rank_playlists,
     resolve_bdmv_layout,
     scan_playlists,
@@ -19,7 +21,7 @@ from bdsubmerge.cancellation import (
     raise_if_cancelled,
     report_progress,
 )
-from bdsubmerge.domain.models import PlaylistInfo
+from bdsubmerge.domain.models import BdmvLayout, PlaylistInfo, SourceFingerprint
 from bdsubmerge.domain.timebase import MediaTick90k
 from bdsubmerge.mapping import (
     BoundaryKind,
@@ -80,6 +82,7 @@ from .models import (
     LoadSubtitlesRequest,
     LoadSubtitlesResult,
     PreparedMerge,
+    PreparedSource,
     PrepareMergeRequest,
     ScanRequest,
     ScanResult,
@@ -102,6 +105,55 @@ from .subtitle_discovery import (
     append_discovered_subtitle_paths,
     discover_subtitle_paths,
 )
+
+
+class _FingerprintingPlaylistAdapter:
+    def __init__(self, delegate: PlaylistAdapter) -> None:
+        self._delegate = delegate
+        self.issues: list[ApplicationIssue] = []
+
+    def parse(
+        self,
+        path: Path,
+        layout: BdmvLayout,
+        *,
+        selected_angles: Mapping[int, int] | None = None,
+    ) -> PlaylistInfo:
+        before = _try_source_fingerprint(path)
+        if before is None:
+            self.issues.append(
+                _error(
+                    "source_missing_during_scan",
+                    f"MPLS source disappeared before parsing: {path}",
+                    str(path),
+                )
+            )
+            raise FileNotFoundError(f"MPLS source disappeared before parsing: {path}")
+        parsed = self._delegate.parse(
+            path,
+            layout,
+            selected_angles=selected_angles,
+        )
+        after = _try_source_fingerprint(path)
+        if after is None:
+            self.issues.append(
+                _error(
+                    "source_missing_during_scan",
+                    f"MPLS source disappeared during parsing: {path}",
+                    str(path),
+                )
+            )
+            raise FileNotFoundError(f"MPLS source disappeared during parsing: {path}")
+        if after != before:
+            self.issues.append(
+                _error(
+                    "source_changed_during_scan",
+                    f"MPLS source changed during parsing: {path}",
+                    str(path),
+                )
+            )
+            raise ValueError(f"MPLS source changed during parsing: {path}")
+        return replace(parsed, source_fingerprint=after)
 
 
 class BdmvApplicationService:
@@ -130,10 +182,27 @@ class BdmvApplicationService:
                 selected_path=str(request.selected_path),
             )
             return ScanResult(None, (), (_error("bdmv_resolution_failed", str(error)),))
+        index_fingerprint = _try_source_fingerprint(layout.index_bdmv_path)
+        if index_fingerprint is None:
+            return ScanResult(
+                None,
+                (),
+                (
+                    _error(
+                        "source_missing_during_scan",
+                        "index.bdmv disappeared before playlist scanning",
+                        str(layout.index_bdmv_path),
+                    ),
+                ),
+            )
+        layout = replace(layout, index_fingerprint=index_fingerprint)
         raise_if_cancelled(cancellation_check)
+        adapter = _FingerprintingPlaylistAdapter(
+            self._playlist_adapter or ShinyaPlaylistAdapter()
+        )
         playlists = scan_playlists(
             layout,
-            adapter=self._playlist_adapter,
+            adapter=adapter,
             cancellation_check=cancellation_check,
         )
         raise_if_cancelled(cancellation_check)
@@ -149,6 +218,24 @@ class BdmvApplicationService:
         )
         raise_if_cancelled(cancellation_check)
         issues: list[ApplicationIssue] = []
+        issues.extend(adapter.issues)
+        current_index_fingerprint = _try_source_fingerprint(layout.index_bdmv_path)
+        if current_index_fingerprint is None:
+            issues.append(
+                _error(
+                    "source_missing_during_scan",
+                    "index.bdmv disappeared during playlist scanning",
+                    str(layout.index_bdmv_path),
+                )
+            )
+        elif current_index_fingerprint != index_fingerprint:
+            issues.append(
+                _error(
+                    "source_changed_during_scan",
+                    "index.bdmv changed during playlist scanning",
+                    str(layout.index_bdmv_path),
+                )
+            )
         if not ranked:
             issues.append(_error("no_playlists", "no MPLS playlists could be scanned"))
         for playlist in ranked:
@@ -222,6 +309,7 @@ class SubtitleApplicationService:
         for index, source in enumerate(request.sources):
             raise_if_cancelled(cancellation_check)
             report_progress(25 + (index * 70 // source_count), str(source.path))
+            source_fingerprint = _try_source_fingerprint(source.path)
             if source.path.suffix.casefold() == ".sup":
                 try:
                     data = self._read_bytes(source.path)
@@ -261,8 +349,23 @@ class SubtitleApplicationService:
                     suspected_long_tail=False,
                     duration_estimated=duration.estimated,
                 )
+                current_fingerprint = _try_source_fingerprint(source.path)
+                source_issue = _source_load_issue(
+                    source.path,
+                    source_fingerprint,
+                    current_fingerprint,
+                )
+                if source_issue is not None:
+                    issues.append(source_issue)
+                    continue
                 assets.append(
-                    SubtitleAsset(source.path, SubtitleFormat.SUP, document, analysis)
+                    SubtitleAsset(
+                        source.path,
+                        SubtitleFormat.SUP,
+                        document,
+                        analysis,
+                        source_fingerprint=current_fingerprint,
+                    )
                 )
                 if duration.estimated:
                     issues.append(
@@ -322,6 +425,15 @@ class SubtitleApplicationService:
                         str(source.path),
                     )
                 )
+            current_fingerprint = _try_source_fingerprint(source.path)
+            source_issue = _source_load_issue(
+                source.path,
+                source_fingerprint,
+                current_fingerprint,
+            )
+            if source_issue is not None:
+                issues.append(source_issue)
+                continue
             assets.append(
                 SubtitleAsset(
                     source.path,
@@ -330,6 +442,7 @@ class SubtitleApplicationService:
                     analysis,
                     loaded.encoding,
                     loaded.bom,
+                    current_fingerprint,
                 )
             )
             raise_if_cancelled(cancellation_check)
@@ -443,15 +556,24 @@ class MergeApplicationService:
             subtitle_paths=tuple(str(asset.path) for asset in request.subtitles.assets),
         )
         issues: list[ApplicationIssue] = []
+        sources: tuple[PreparedSource, ...] = ()
         if request.require_existing_sources:
-            issues.extend(_source_existence_issues(request))
+            sources, source_issues = _prepare_sources(request)
+            issues.extend(source_issues)
         if not request.playlist.is_available:
             issues.append(_error("playlist_unavailable", "selected playlist is unavailable"))
         if not request.subtitles.ready:
             issues.extend(request.subtitles.issues)
             issues.append(_error("subtitles_not_ready", "ordered subtitles are not ready"))
         if issues:
-            return PreparedMerge(None, None, None, None, tuple(issues))
+            return PreparedMerge(
+                None,
+                None,
+                None,
+                None,
+                tuple(issues),
+                sources=sources,
+            )
 
         try:
             raise_if_cancelled(cancellation_check)
@@ -502,7 +624,12 @@ class MergeApplicationService:
                 playlist_path=str(request.playlist.path),
             )
             return PreparedMerge(
-                None, None, None, None, (_error("mapping_failed", str(error)),)
+                None,
+                None,
+                None,
+                None,
+                (_error("mapping_failed", str(error)),),
+                sources=sources,
             )
         if mapping.has_low_confidence and not request.accept_low_confidence:
             issues.append(
@@ -576,6 +703,8 @@ class MergeApplicationService:
                         notice.source_label,
                     )
                 )
+        if request.require_existing_sources:
+            issues.extend(_source_change_issues(sources))
         execution_report: MergeExecutionReport | None = None
         report_preflight: PreflightResult | None = None
         report_payload: str | None = None
@@ -663,6 +792,7 @@ class MergeApplicationService:
             execution_report,
             report_preflight,
             report_payload,
+            sources,
         )
 
     def execute(
@@ -679,6 +809,14 @@ class MergeApplicationService:
                 request.dry_run,
                 None,
                 (_error("merge_not_ready", "merge preflight contains blocking errors"),),
+            )
+        source_issues = _source_change_issues(prepared.sources)
+        if source_issues:
+            return ExecuteMergeResult(
+                prepared,
+                request.dry_run,
+                None,
+                source_issues,
             )
         if request.dry_run:
             return ExecuteMergeResult(prepared, True, None)
@@ -927,25 +1065,112 @@ def _required_effective_end(asset: SubtitleAsset, index: int) -> int:
     return value
 
 
-def _source_existence_issues(request: PrepareMergeRequest) -> tuple[ApplicationIssue, ...]:
-    checks = (
-        (request.layout.bdmv_path.is_dir(), "missing_bdmv", request.layout.bdmv_path),
+def _prepare_sources(
+    request: PrepareMergeRequest,
+) -> tuple[tuple[PreparedSource, ...], tuple[ApplicationIssue, ...]]:
+    issues: list[ApplicationIssue] = []
+    if not request.layout.bdmv_path.is_dir():
+        issues.append(
+            _error(
+                "missing_bdmv",
+                f"required source no longer exists: {request.layout.bdmv_path}",
+                str(request.layout.bdmv_path),
+            )
+        )
+    candidates: tuple[tuple[str, str, Path, SourceFingerprint | None], ...] = (
         (
-            request.layout.index_bdmv_path.is_file(),
+            "index_bdmv",
             "missing_index_bdmv",
             request.layout.index_bdmv_path,
+            request.layout.index_fingerprint,
         ),
-        (request.playlist.path.is_file(), "missing_playlist", request.playlist.path),
+        (
+            "playlist",
+            "missing_playlist",
+            request.playlist.path,
+            request.playlist.source_fingerprint,
+        ),
         *(
-            (asset.path.is_file(), "missing_subtitle_source", asset.path)
-            for asset in request.subtitles.assets
+            (
+                f"episode-{index + 1}",
+                "missing_subtitle_source",
+                asset.path,
+                asset.source_fingerprint,
+            )
+            for index, asset in enumerate(request.subtitles.assets)
         ),
     )
-    return tuple(
-        _error(code, f"required source no longer exists: {path}", str(path))
-        for exists, code, path in checks
-        if not exists
-    )
+    sources: list[PreparedSource] = []
+    for source_id, missing_code, path, expected in candidates:
+        if expected is None:
+            if not path.is_file():
+                issues.append(
+                    _error(
+                        missing_code,
+                        f"required source no longer exists: {path}",
+                        str(path),
+                    )
+                )
+            continue
+        source = PreparedSource(source_id, path, expected)
+        sources.append(source)
+        issues.extend(_source_change_issues((source,)))
+    return tuple(sources), tuple(issues)
+
+
+def _source_change_issues(
+    sources: tuple[PreparedSource, ...],
+) -> tuple[ApplicationIssue, ...]:
+    issues: list[ApplicationIssue] = []
+    for source in sources:
+        actual = _try_source_fingerprint(source.path)
+        if actual is None:
+            issues.append(
+                _error(
+                    "source_missing_since_load",
+                    f"source disappeared after it was loaded: {source.path}",
+                    str(source.path),
+                )
+            )
+        elif actual != source.fingerprint:
+            issues.append(
+                _error(
+                    "source_changed_since_load",
+                    f"source changed after it was loaded: {source.path}",
+                    str(source.path),
+                )
+            )
+    return tuple(issues)
+
+
+def _source_load_issue(
+    path: Path,
+    before: SourceFingerprint | None,
+    after: SourceFingerprint | None,
+) -> ApplicationIssue | None:
+    if before is None and after is None:
+        return None
+    if after is None:
+        return _error(
+            "source_missing_during_load",
+            f"source disappeared while it was being loaded: {path}",
+            str(path),
+        )
+    if before is None or before != after:
+        return _error(
+            "source_changed_during_load",
+            f"source changed while it was being loaded: {path}",
+            str(path),
+        )
+    return None
+
+
+def _try_source_fingerprint(path: Path) -> SourceFingerprint | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return SourceFingerprint(stat.st_size, stat.st_mtime_ns)
 
 
 def _preflight_application_issues(

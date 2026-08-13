@@ -49,6 +49,26 @@ def test_output_may_not_overwrite_an_input_subtitle(tmp_path: Path) -> None:
     assert "overwrites_input" in {issue.code for issue in result.errors}
 
 
+def test_existing_directory_cannot_be_used_as_an_output_destination(tmp_path: Path) -> None:
+    destination = tmp_path / "episode.ass"
+    destination.mkdir()
+
+    result = preflight_outputs(
+        (
+            FullPathOutputTarget(
+                "target",
+                CollisionPolicy.BACKUP,
+                path=destination,
+            ),
+        ),
+        OutputContext(subtitle_format="ass"),
+    )
+
+    assert result.ready is False
+    assert "invalid_output_destination" in {issue.code for issue in result.errors}
+    assert destination.is_dir()
+
+
 def test_jriver_preflight_requires_real_index_and_exact_destination(tmp_path: Path) -> None:
     index_path = tmp_path / "BDMV" / "index.bdmv"
     index_path.parent.mkdir()

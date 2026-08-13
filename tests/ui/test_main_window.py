@@ -10,6 +10,7 @@ from pytestqt.qtbot import QtBot
 from bdsubmerge.application import (
     ApplicationIssue,
     ApplicationSeverity,
+    ExecuteMergeResult,
     LoadSubtitlesRequest,
     LoadSubtitlesResult,
     MergeReportFormat,
@@ -231,6 +232,24 @@ def test_filter_and_error_details_are_non_modal(qtbot: QtBot, tmp_path: Path) ->
 
     assert window.error_panel.isVisible() is False or "broken" in window.error_panel.toPlainText()
     assert "broken" in window.error_panel.toPlainText()
+
+
+def test_generate_business_failure_remains_failed_after_task_finishes(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    prepared = PreparedMerge(None, None, None, None, ())
+    issue = ApplicationIssue(ApplicationSeverity.ERROR, "output_write_failed", "denied")
+
+    window._generate_finished(ExecuteMergeResult(prepared, False, None, (issue,)))
+    window._task_finished()
+
+    assert window.task_failed is True
+    assert window.task_status.text() == window.translations.text("task.failed")
+    assert "output_write_failed" in window.error_panel.toPlainText()
+    assert "denied" in window.error_panel.toPlainText()
 
 
 def test_preflight_displays_full_resolved_target_path(qtbot: QtBot, tmp_path: Path) -> None:

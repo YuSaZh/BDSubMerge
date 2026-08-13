@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from bdsubmerge.domain.models import BdmvLayout, PlaylistInfo
+from bdsubmerge.domain.models import BdmvLayout, PlaylistInfo, SourceFingerprint
 from bdsubmerge.mapping import (
     MappingCostConfig,
     MappingLock,
@@ -90,6 +90,7 @@ class SubtitleAsset:
     analysis: TextSubtitleInfo
     encoding: str | None = None
     bom: bool = False
+    source_fingerprint: SourceFingerprint | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +144,13 @@ class PrepareMergeRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class PreparedSource:
+    id: str
+    path: Path
+    fingerprint: SourceFingerprint
+
+
+@dataclass(frozen=True, slots=True)
 class PreparedMerge:
     mapping: MappingResult | None
     output_preflight: PreflightResult | None
@@ -152,6 +160,7 @@ class PreparedMerge:
     execution_report: MergeExecutionReport | None = None
     report_preflight: PreflightResult | None = None
     report_payload: str | None = None
+    sources: tuple[PreparedSource, ...] = ()
 
     @property
     def ready(self) -> bool:

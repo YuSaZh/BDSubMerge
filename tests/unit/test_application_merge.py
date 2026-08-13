@@ -21,6 +21,7 @@ from bdsubmerge.domain.models import (
     PlaylistInfo,
     PlaylistMarkInfo,
     ReferenceStatus,
+    SourceFingerprint,
 )
 from bdsubmerge.domain.timebase import MediaTick90k
 from bdsubmerge.mapping import (
@@ -101,6 +102,27 @@ def _playlist(layout: BdmvLayout) -> PlaylistInfo:
         duration_90k=MediaTick90k(60 * 90_000),
         play_items=(item,),
         marks=(PlaylistMarkInfo(0, 1, 0, 0, MediaTick90k(0)),),
+    )
+
+
+def _source_fingerprint(path: Path) -> SourceFingerprint:
+    stat = path.stat()
+    return SourceFingerprint(stat.st_size, stat.st_mtime_ns)
+
+
+def _capture_bdmv_fingerprints(
+    layout: BdmvLayout,
+    playlist: PlaylistInfo,
+) -> tuple[BdmvLayout, PlaylistInfo]:
+    return (
+        replace(
+            layout,
+            index_fingerprint=_source_fingerprint(layout.index_bdmv_path),
+        ),
+        replace(
+            playlist,
+            source_fingerprint=_source_fingerprint(playlist.path),
+        ),
     )
 
 
@@ -232,6 +254,82 @@ def test_missing_source_blocks_merge_before_output(tmp_path: Path) -> None:
 
     assert prepared.ready is False
     assert "missing_subtitle_source" in {issue.code for issue in prepared.issues}
+
+
+@pytest.mark.parametrize("source_name", ("index", "playlist", "subtitle"))
+@pytest.mark.parametrize("change", ("changed", "missing"))
+def test_prepare_blocks_source_changed_or_missing_since_load(
+    tmp_path: Path,
+    source_name: str,
+    change: str,
+) -> None:
+    layout = _layout(tmp_path)
+    playlist = _playlist(layout)
+    layout, playlist = _capture_bdmv_fingerprints(layout, playlist)
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    subtitles = SubtitleApplicationService().load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    source_path = {
+        "index": layout.index_bdmv_path,
+        "playlist": playlist.path,
+        "subtitle": subtitle_path,
+    }[source_name]
+    if change == "changed":
+        source_path.write_bytes(source_path.read_bytes() + b"changed")
+    else:
+        source_path.unlink()
+
+    prepared = MergeApplicationService().prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("output", path=tmp_path / "output.ass"),),
+        )
+    )
+
+    assert prepared.ready is False
+    assert f"source_{change}_since_load" in {issue.code for issue in prepared.issues}
+
+
+@pytest.mark.parametrize("source_name", ("index", "playlist", "subtitle"))
+def test_execute_rechecks_sources_before_writing(
+    tmp_path: Path,
+    source_name: str,
+) -> None:
+    layout = _layout(tmp_path)
+    playlist = _playlist(layout)
+    layout, playlist = _capture_bdmv_fingerprints(layout, playlist)
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    subtitles = SubtitleApplicationService().load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    destination = tmp_path / "output.ass"
+    service = MergeApplicationService()
+    prepared = service.prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("output", path=destination),),
+        )
+    )
+    source_path = {
+        "index": layout.index_bdmv_path,
+        "playlist": playlist.path,
+        "subtitle": subtitle_path,
+    }[source_name]
+    source_path.write_bytes(source_path.read_bytes() + b"changed after preflight")
+
+    result = service.execute(ExecuteMergeRequest(prepared))
+
+    assert prepared.ready is True
+    assert result.succeeded is False
+    assert {issue.code for issue in result.issues} == {"source_changed_since_load"}
+    assert destination.exists() is False
 
 
 def test_additional_user_boundary_changes_automatic_mapping(tmp_path: Path) -> None:

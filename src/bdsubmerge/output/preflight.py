@@ -134,7 +134,16 @@ def preflight_outputs(
 
         resolved_path = path
         backup_path: Path | None = None
-        if path.exists():
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            issues.append(
+                _error(
+                    "invalid_output_destination",
+                    "existing output destination is not a regular file",
+                    target.target_id,
+                    path,
+                )
+            )
+        elif path.exists():
             if target.collision_policy is CollisionPolicy.ABORT:
                 issues.append(
                     _error(
