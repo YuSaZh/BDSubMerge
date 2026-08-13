@@ -88,6 +88,8 @@
   "preflight.expected_events": "预计事件数：{count}",
   "preflight.expected_styles": "预计样式数：{count}",
   "preflight.warning_count": "警告数：{count}",
+  "confirm.warnings.title": "确认警告",
+  "confirm.warnings.message": "预检包含 {count} 条警告。仍要生成字幕吗？",
   "actions.save": "保存项目",
   "actions.open": "打开项目",
   "actions.map": "自动映射",

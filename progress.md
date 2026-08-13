@@ -16,12 +16,20 @@
 - 下载并审计 artifacts `9172753453`、`9172741310`、`9172740974`：Ubuntu 261 项（2 skipped）、Windows 261 项，均为 0 failures / 0 errors；coverage XML 行覆盖率为 87.06%/87.04%。四张截图哈希互异，目视无重叠、截断或 CJK 缺字，新增完整输出摘要在中英文和高 DPI 画面中可见。
 
 ### 发布安全阻断项批次
-- **状态：** in_progress
+- **状态：** complete
 - 当前绿色基线 `64e22a3` 的 Windows Package run `31679478339` 已成功；远程完成 x64 onedir、许可证闭包、ZIP/SHA256、中文空格路径解压和无 Python EXE 烟测。
 - 已静态审计 artifact `9172908967`：ZIP 为 57,029,081 字节、314 个条目且只有 `BDSubMerge/` 顶层；EXE、双语资源、项目/Qt/Python/安装依赖许可证及 manifest 全部存在，SHA256 与远程清单精确一致。
 - 当前源码批次拒绝将目录、链接或其他非普通文件作为字幕输出目标，并在原子提交前再次防御预检后竞态，避免 `BACKUP/OVERWRITE` 移动目录。
 - GUI 生成结果 `succeeded=False` 时现在保留失败终态和错误详情，不再显示“写入 0 个文件”或被 finished signal 覆盖为完成。
 - 真实 BDMV 扫描与字幕加载捕获 size/mtime 指纹，prepare 与 execute 均复核 `index.bdmv`、MPLS 和字幕源；加载期间或预检后变化都会阻断写入。已补对应远程回归测试，本机未执行。
+- 提交 `e5ae7b5` / run `31681278331` 已通过源码包、Ubuntu/Windows Ruff、Mypy、275 项 Pytest、真实 Windows UNC 和 Linux 四态截图矩阵；coverage XML 行覆盖率为 87.10%/87.09%，artifacts 为 Windows reports `9173588434`、Ubuntu reports `9173572981`、UI screenshots `9173572703`。
+- 四张截图哈希与上一绿色批次一致，人工检查无重叠、截断、CJK 缺字或视觉回归。
+
+### 预检 warning 明确确认批次
+- **状态：** in_progress
+- 任务书 18 节要求 error 禁止输出、warning 由用户确认后输出、info 无需确认；当前应用层 `PreparedMerge.ready` 已负责 error 门禁。
+- GUI 仅在 ready 预检包含 warning 时显示双语确认框，默认按钮和 ESC 都是“否”；拒绝不启动后台写入，确认后才创建执行请求，无 warning 的正常流程不增加点击。
+- 已补 warning 拒绝/确认、info 直接生成、error 不输出及确认框默认值/本地化的远程测试代码；本机不执行测试、lint、类型检查或构建。
 
 ### M0-M4 基线
 - **状态：** complete
@@ -98,6 +106,7 @@
 | 31678761361 | 完整 CI | `8d4bfca` 源码包成功；双平台 Ruff 暴露余下 9 个中文全角标点 RUF001，后续阶段未运行 | fail |
 | 31679107948 | 完整 CI | `64e22a3` 源码包、双平台 Ruff/Mypy/Pytest、真实 Windows UNC、四态 UI 截图与 artifact 全部通过 | pass |
 | 31679478339 | Windows Package | `64e22a3` x64 onedir、许可证、ZIP/SHA256、中文空格路径无 Python EXE 烟测与 artifact 全部通过 | pass |
+| 31681278331 | 完整 CI | `e5ae7b5` 源码包、双平台 Ruff/Mypy/Pytest、真实 Windows UNC、Linux 四态 UI 截图矩阵与 artifacts 全部通过 | pass |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -160,10 +169,11 @@
 ### 工作模型更新
 - **状态：** complete
 - 当前 goal 已处于 active，目标是完成 BDSubMerge 1.0；仓库级 `AGENTS.md` 约束已作为后续工作的硬边界。
-- 远程绿色基线固定为 `38c3d7884a7941cc080bbfe22bbc47ccc5d0c759` / run `31672669445`，任何未提交改动都必须由自己的精确 SHA 重新通过 Actions，不能继承该绿灯。
-- 当前工作树除三份规划文件外，还存在实际进度/字幕导入相关的未提交源码改动；来源已由会话交接说明确认，但尚未完成静态审计、测试配套或远程验证，因此保持在研状态且不覆盖。
+- 当前 `main`、`origin/main` 与 GitHub 远程 HEAD 均为 `e5ae7b550ba7ad634bf65d1bc2140fee3d01c53f`；远程绿色基线更新为该提交及 run `31681278331`，任何后续改动仍必须由自己的精确 SHA 重新通过 Actions，不能继承该绿灯。
+- 本轮开始时前序源指纹、输出目标和 GUI 失败终态修复已完成提交与推送，源码工作树干净；仅本次工作模型记录产生规划文件变更。
 - 后续执行模型固定为本地静态审计和编辑、`git diff --check`、提交、使用本机凭据推送、等待并审计同 SHA GitHub Actions；本地不执行任何构建、测试、lint、类型检查、依赖安装或打包。
 - 发布候选必须在同一 SHA 上闭环 CI、Windows Package、ZIP/SHA256、许可证、版本一致性和最终 EXE 视觉证据，再创建 `v1.0.0` tag/Release。
+- 本机凭据已实测可用：SSH 读取远程成功，`gh` keyring 的活动账号为 `YuSaZh`、Git 协议为 SSH 且具备 `repo` 权限；无需浏览器登录或补装本机开发环境。
 
 ### 实际任务进度批次
 - **状态：** complete

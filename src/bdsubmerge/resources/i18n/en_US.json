@@ -88,6 +88,8 @@
   "preflight.expected_events": "Expected events: {count}",
   "preflight.expected_styles": "Expected styles: {count}",
   "preflight.warning_count": "Warnings: {count}",
+  "confirm.warnings.title": "Confirm warnings",
+  "confirm.warnings.message": "Preflight has {count} warnings. Generate subtitles anyway?",
   "actions.save": "Save project",
   "actions.open": "Open project",
   "actions.map": "Auto map",

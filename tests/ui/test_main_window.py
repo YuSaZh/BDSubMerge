@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QItemSelectionModel, QSettings, Qt
-from PySide6.QtWidgets import QComboBox, QFileDialog
+from PySide6.QtWidgets import QComboBox, QFileDialog, QMessageBox
 from pytestqt.qtbot import QtBot
 
 from bdsubmerge.application import (
@@ -304,6 +304,129 @@ def test_preflight_displays_expected_counts_and_warning_summary(
     assert "预计事件数：3" in summary  # noqa: RUF001
     assert "预计样式数：2" in summary  # noqa: RUF001
     assert "警告数：1" in summary  # noqa: RUF001
+
+
+@pytest.mark.parametrize("confirmed", (False, True))
+def test_warning_only_preflight_requires_explicit_generation_confirmation(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    confirmed: bool,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    prepared = PreparedMerge(
+        MappingResult((), 0, MappingConfidence.HIGH),
+        PreflightResult((), ()),
+        MergeReport((), 0, 0),
+        "subtitle",
+        (ApplicationIssue(ApplicationSeverity.WARNING, "review", "review output"),),
+    )
+    started: list[object] = []
+    reviewed: list[tuple[ApplicationIssue, ...]] = []
+    window.prepared = prepared
+    window.mapping_dirty = False
+
+    def confirm(warnings: tuple[ApplicationIssue, ...]) -> bool:
+        reviewed.append(warnings)
+        return confirmed
+
+    monkeypatch.setattr(window, "_confirm_preflight_warnings", confirm)
+    monkeypatch.setattr(window, "_start_task", lambda *args, **kwargs: started.append(args))
+
+    window.start_generate()
+
+    assert reviewed == [prepared.issues]
+    assert bool(started) is confirmed
+
+
+def test_info_only_preflight_generates_without_confirmation(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    window.prepared = PreparedMerge(
+        MappingResult((), 0, MappingConfidence.HIGH),
+        PreflightResult((), ()),
+        MergeReport((), 0, 0),
+        "subtitle",
+        (ApplicationIssue(ApplicationSeverity.INFO, "note", "details"),),
+    )
+    window.mapping_dirty = False
+    started: list[object] = []
+    monkeypatch.setattr(
+        window,
+        "_confirm_preflight_warnings",
+        lambda _warnings: pytest.fail("information must not require confirmation"),
+    )
+    monkeypatch.setattr(window, "_start_task", lambda *args, **kwargs: started.append(args))
+
+    window.start_generate()
+
+    assert started
+
+
+def test_error_preflight_never_starts_generation(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    window.prepared = PreparedMerge(
+        MappingResult((), 0, MappingConfidence.HIGH),
+        PreflightResult((), ()),
+        MergeReport((), 0, 0),
+        "subtitle",
+        (ApplicationIssue(ApplicationSeverity.ERROR, "blocked", "details"),),
+    )
+    window.mapping_dirty = False
+    preflight_started: list[bool] = []
+    generation_started: list[object] = []
+    monkeypatch.setattr(window, "start_preflight", lambda: preflight_started.append(True))
+    monkeypatch.setattr(
+        window,
+        "_start_task",
+        lambda *args, **kwargs: generation_started.append(args),
+    )
+
+    window.start_generate()
+
+    assert preflight_started == [True]
+    assert generation_started == []
+
+
+def test_warning_confirmation_is_localized_and_defaults_to_no(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    observed: list[QMessageBox] = []
+
+    def reject(dialog: QMessageBox) -> int:
+        observed.append(dialog)
+        return QMessageBox.StandardButton.No.value
+
+    monkeypatch.setattr(QMessageBox, "exec", reject)
+
+    confirmed = window._confirm_preflight_warnings(
+        (ApplicationIssue(ApplicationSeverity.WARNING, "review", "review output"),)
+    )
+
+    assert confirmed is False
+    assert len(observed) == 1
+    dialog = observed[0]
+    assert dialog.windowTitle() == "确认警告"
+    assert dialog.text() == "预检包含 1 条警告。仍要生成字幕吗？"  # noqa: RUF001
+    assert dialog.informativeText() == "- review output"
+    assert dialog.standardButton(dialog.defaultButton()) == QMessageBox.StandardButton.No
+    assert dialog.standardButton(dialog.escapeButton()) == QMessageBox.StandardButton.No
+    assert dialog.button(QMessageBox.StandardButton.Yes).text() == "是"
+    assert dialog.button(QMessageBox.StandardButton.No).text() == "否"
 
 
 def test_playlist_double_click_opens_localized_read_only_structure(

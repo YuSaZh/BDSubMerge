@@ -33,6 +33,7 @@
 - commit `38c3d78` 的 run `31672669445` 已完成远程闭环：Ubuntu 230 passed、2 skipped、82.93%，Windows 232 passed、82.92% 且真实 SMB/UNC 通过；四态截图 artifact `9170299987` 的文件哈希与日志一致，人工审计无重叠、截断或 CJK 缺字。
 - 当前工作树在绿色基线之后已有实际进度回调、字幕发现/加载应用服务和 UI 任务桥接的未提交源码；这些改动尚无对应测试提交或 Actions run，必须作为独立在研批次审计，不能视为已验证功能。
 - 当前 goal 已处于 active；执行边界以仓库级 `AGENTS.md` 为准，GitHub Actions 是唯一执行性验证环境，本机环境缺项不构成需要补装的开发阻塞。
+- 2026-08-13 再次实测本机凭据：显式使用 `C:\Users\Hanam\.ssh\config` 与 `known_hosts` 可读取 `git@github.com:YuSaZh/BDSubMerge.git`；`gh auth status` 显示活动账号 `YuSaZh`、SSH Git 协议和 `repo` scope。沙箱内不能直接读取用户 SSH 配置，外部 Git 对沙箱所有权仓库需使用单次 `safe.directory`，两者都不需要更改全局 Git 或网页登录。
 - 当前未提交实现已让 `ServiceTask` 透传嵌套进度，并让 GUI 显示详情；但应用层目前只有字幕发现/加载报告中间进度，扫描、预检、合并等长任务是否有足够的阶段与详情仍需逐一审计。
 - 当前未提交批次还把目录拖放的字幕发现移入应用服务，并新增项目扫描失败处理；现有 `tests/` 尚无对应未提交变化，必须补足服务、取消、进度和 GUI 回归测试后才能推送验证。
 - 静态审计确认 `application/display_models.py` 已有播放列表结构和字幕详情投影，但 GUI 未调用；预检摘要也只显示路径和 issue，未显示任务书要求的预计事件数、样式数和警告摘要。阶段 5 对这三项的完成标记已撤回。
@@ -43,6 +44,8 @@
 - commit `64e22a3` / run `31679107948` 已闭环详情与输出摘要批次：源码包、双平台 Ruff/Mypy/Pytest、真实 Windows UNC 和 Linux 四态截图矩阵全部通过。JUnit 为 Ubuntu 261 项（2 skipped）和 Windows 261 项；coverage XML 行覆盖率为 87.06%/87.04%。四张截图哈希互异，人工审计无重叠、截断或 CJK 缺字，完整 7 列输出摘要与事件/样式/警告统计均可见。
 - `64e22a3` 的 Windows Package run `31679478339` 已通过 x64 onedir、许可证闭包、ZIP/SHA256、中文空格路径解压和无 Python 环境 EXE 烟测。artifact `9172908967` 包含 57,029,081 字节、314 个条目的 ZIP，SHA256 `662078ec309a867a5e443e12899c5290e2910e1f21f33f3d40fbae08e6265f2a` 与清单一致；它仍是 `0.1.0.dev0` 基线包，不是 1.0 最终候选。
 - 发布前静态审计确认输出目标目录可被 collision 流程误处理、业务写入失败可被 GUI 显示为完成、普通会话未复核加载时源指纹。本批同时在共享应用/输出层修复，确保 CLI 与 GUI 使用同一安全契约；warning 确认和项目重定位仍为后续独立批次。
+- commit `e5ae7b5` / run `31681278331` 已闭环上述源指纹、输出目标和 GUI 终态修复：源码包、Ubuntu/Windows Ruff、Mypy、Pytest、真实 Windows UNC 和 Linux 四态截图矩阵全部成功，现为远程绿色基线；Windows Package 仍需在统一 `1.0.0` 的最终候选上重新验证。
+- 任务书 18 节的严重度契约要求 error 阻断、warning 明确确认后输出、info 无需确认；当前应用层 `PreparedMerge.ready` 已阻断 error，GUI 只需对 ready 状态中的 warning 增加默认 No 且 ESC 为 No 的双语确认，不改变 CLI 和无 warning 流程。
 
 ## 技术决策
 | 决策 | 理由 |
@@ -63,7 +66,7 @@
 
 ## 外部状态
 - 2026-08-13 已在本机用户凭据上下文验证：Git SSH 可读取
-  `git@github.com:YuSaZh/BDSubMerge.git`，远程 `main` 为 `fdfddf9`；`gh` keyring 中
+  `git@github.com:YuSaZh/BDSubMerge.git`，远程 `main` 为 `e5ae7b5`；`gh` keyring 中
   `YuSaZh` 账号有效、使用 SSH 且具备 `repo` 权限。无需浏览器登录或新增本机开发环境。
 - GitHub Actions run `31627068738`：M5 核心在 Windows、Ubuntu 与 source distribution 全部成功。
 - GitHub Actions run `31630779273`：source distribution 成功；Ubuntu 与 Windows

@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -2874,12 +2875,43 @@ class MainWindow(QMainWindow):
         if self.mapping_dirty or self.prepared is None or not self.prepared.ready:
             self.start_preflight()
             return
+        warnings = tuple(
+            issue
+            for issue in self.prepared.issues
+            if issue.severity is ApplicationSeverity.WARNING
+        )
+        if warnings and not self._confirm_preflight_warnings(warnings):
+            return
         request = ExecuteMergeRequest(self.prepared)
         self._start_task(
             lambda: self.merge_service.execute(request),
             self.translations.text("task.writing"),
             self._generate_finished,
         )
+
+    def _confirm_preflight_warnings(
+        self,
+        warnings: tuple[ApplicationIssue, ...],
+    ) -> bool:
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setWindowTitle(self.translations.text("confirm.warnings.title"))
+        dialog.setText(
+            self.translations.text("confirm.warnings.message", count=len(warnings))
+        )
+        dialog.setInformativeText("\n".join(f"- {issue.message}" for issue in warnings))
+        dialog.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        yes_button = dialog.button(QMessageBox.StandardButton.Yes)
+        no_button = dialog.button(QMessageBox.StandardButton.No)
+        if yes_button is not None:
+            yes_button.setText(self.translations.text("common.yes"))
+        if no_button is not None:
+            no_button.setText(self.translations.text("common.no"))
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        dialog.setEscapeButton(QMessageBox.StandardButton.No)
+        return dialog.exec() == QMessageBox.StandardButton.Yes.value
 
     def _generate_finished(self, value: object) -> None:
         result = cast(ExecuteMergeResult, value)
