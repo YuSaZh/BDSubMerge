@@ -52,6 +52,8 @@
 | 31662921037 | Windows Package | onedir 构建与依赖许可证收集通过；Qt LGPL 文件名门禁误判，ZIP 前停止 | fail |
 | 31663297253 | 完整 CI | `0ff9b9b` 的 Ubuntu/Windows、真实 UNC 与源码包全部通过 | pass |
 | 31663324198 | Windows Package | wheel 元数据实际未提供 LGPL 正文；构建与依赖许可收集通过，ZIP 前停止 | fail |
+| 31663851504 | 完整 CI | `97f3ba4` 的 Ubuntu/Windows、真实 UNC 与源码包全部通过 | pass |
+| 31663862171 | Windows Package | 许可证、ZIP/SHA 均成功；GUI 子系统未设置 `$LASTEXITCODE` 被误判 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -71,6 +73,7 @@
 | 映射模块路径假设 | 假定映射实现为 `src/bdsubmerge/mapping.py` | 用 `rg --files` 确认其为 `mapping/` 包，再按真实模块读取 |
 | 文件规划记录补丁 | 将 `progress.md` 的预期行误用于 `findings.md` 上下文 | 按两份文件各自结构拆分补丁 |
 | 许可证 Base64 转补丁 | 编排环境无 `atob`，随后低输出预算截断 Base64 | 改用 GitHub raw media type并提高单次读取预算，正文通过 `apply_patch` 写入 |
+| Package GUI 退出码 | 直接调用 `--windowed` EXE 后 `$LASTEXITCODE` 为空，门禁误判 | 使用 `Start-Process -Wait -PassThru` 读取真实 `ExitCode` |
 
 ## 五问重启检查
 | 问题 | 答案 |

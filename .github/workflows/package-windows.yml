@@ -207,14 +207,12 @@ jobs:
           $env:VIRTUAL_ENV = $null
           $env:CONDA_PREFIX = $null
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-          Push-Location $workingDirectory
-          try {
-            & $executable --smoke-test
-            if ($LASTEXITCODE -ne 0) {
-              throw "Packaged GUI and adapter smoke test failed with exit code $LASTEXITCODE"
-            }
-          } finally {
-            Pop-Location
+          $process = Start-Process -FilePath $executable `
+            -ArgumentList '--smoke-test' `
+            -WorkingDirectory $workingDirectory `
+            -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged GUI and adapter smoke test failed with exit code $($process.ExitCode)"
           }
       - name: Verify release checksum
         shell: pwsh
