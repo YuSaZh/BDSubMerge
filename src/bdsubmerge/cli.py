@@ -9,6 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import redirect_stderr
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from enum import Enum, IntEnum
+from itertools import pairwise
 from pathlib import Path
 from typing import Protocol, TextIO
 
@@ -418,7 +419,7 @@ def _project_structure_issues(project: ProjectSnapshot) -> tuple[CliIssue, ...]:
                 )
             )
         ordered_mappings.append(mapping)
-    for previous, current in zip(ordered_mappings, ordered_mappings[1:]):
+    for previous, current in pairwise(ordered_mappings):
         if previous.end_90k > current.start_90k:
             issues.append(
                 CliIssue(

@@ -1,7 +1,7 @@
 from pathlib import Path
 from threading import Event
 
-from PySide6.QtCore import QSettings, QThreadPool, Qt
+from PySide6.QtCore import QSettings, Qt, QThreadPool
 from pytestqt.qtbot import QtBot
 
 from bdsubmerge.ui.main_window import MainWindow

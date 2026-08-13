@@ -12,7 +12,7 @@ from .models import ApplicationIssue, ApplicationSeverity
 
 JRIVER_INCOMPATIBLE_WARNING = (
     "一份 index.ass 只能对应一条播放时间线。"
-    "当前原盘包含多个不等价播放列表，从菜单进入其他标题时，该字幕可能无法正确匹配。"
+    "当前原盘包含多个不等价播放列表，从菜单进入其他标题时，该字幕可能无法正确匹配。"  # noqa: RUF001
 )
 
 

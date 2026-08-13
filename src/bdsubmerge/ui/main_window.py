@@ -6,9 +6,9 @@ import json
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import cast, override
 
-from PySide6.QtCore import QByteArray, QPoint, QSettings, QThreadPool, Qt, Slot
+from PySide6.QtCore import QByteArray, QPoint, QSettings, Qt, QThreadPool, Slot
 from PySide6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -45,8 +45,8 @@ from bdsubmerge.application import (
     MergeApplicationService,
     PlaylistSelectionRequest,
     PlaylistSelectionResult,
-    PrepareMergeRequest,
     PreparedMerge,
+    PrepareMergeRequest,
     ScanRequest,
     ScanResult,
     SubtitleApplicationService,
@@ -1596,6 +1596,7 @@ class MainWindow(QMainWindow):
             theme = ThemeMode.SYSTEM
         self.set_theme(theme)
 
+    @override
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.cancellation is not None:
             self.cancellation.cancel()
@@ -1604,10 +1605,12 @@ class MainWindow(QMainWindow):
         self.settings.setValue("output/mode", self.output_mode.currentData())
         super().closeEvent(event)
 
+    @override
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
+    @override
     def dropEvent(self, event: QDropEvent) -> None:
         paths = tuple(
             Path(url.toLocalFile()) for url in event.mimeData().urls() if url.isLocalFile()

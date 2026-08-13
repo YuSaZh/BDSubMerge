@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import override
+
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsLineItem, QGraphicsScene, QGraphicsView
@@ -121,6 +123,7 @@ class TimelineView(QGraphicsView):
             item.setToolTip(f"{boundary_id}: {format_ticks(time_90k)}")
             self._boundary_items[boundary_id] = item
 
+    @override
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if self._playlist is not None and int(self._playlist.duration_90k) > 0:
             position = self.mapToScene(event.position().toPoint())
@@ -134,6 +137,7 @@ class TimelineView(QGraphicsView):
             return
         super().mouseDoubleClickEvent(event)
 
+    @override
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         super().mouseReleaseEvent(event)
         if self._playlist is None:
@@ -149,6 +153,7 @@ class TimelineView(QGraphicsView):
             item.setToolTip(f"{boundary_id}: {format_ticks(time_90k)}")
             self.user_boundary_moved.emit(boundary_id, time_90k)
 
+    @override
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Delete:
             selected_ids = tuple(
@@ -170,6 +175,7 @@ class TimelineView(QGraphicsView):
             index += 1
         return f"user:{index}"
 
+    @override
     def wheelEvent(self, event: QWheelEvent) -> None:
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15

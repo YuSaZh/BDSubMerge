@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import traceback
 from collections.abc import Callable
-from typing import Generic, TypeVar
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
-
-ResultT = TypeVar("ResultT")
 
 
 class CancellationToken:
@@ -31,7 +28,7 @@ class TaskSignals(QObject):
     finished = Signal()
 
 
-class ServiceTask(QRunnable, Generic[ResultT]):
+class ServiceTask[ResultT](QRunnable):
     def __init__(
         self,
         operation: Callable[[], ResultT],
