@@ -4,6 +4,22 @@ All notable changes to BDSubMerge are recorded here.
 
 ## Unreleased
 
+## 1.0.2-beta.2 - 2026-08-14
+
+### Added
+
+- Added a parallel Linux x86_64 onedir package with native X11 GUI smoke tests, packaged screenshots,
+  SHA-256 verification, and publication beside the Windows archive.
+
+### Fixed
+
+- Sized compact mapping columns only wide enough for their complete headings and values, including
+  the new `No.` heading, chapter IDs, target interval, offset, confidence, and status.
+- Kept complete subtitle filenames and output target paths visible through full-width columns and
+  horizontal scrolling instead of ellipsis.
+- Reworded zero-time event diagnostics in Simplified Chinese to explain that a source event shifted
+  entirely before the final timeline is omitted from the generated subtitle.
+
 ## 1.0.2-beta.1 - 2026-08-14
 
 ### Fixed

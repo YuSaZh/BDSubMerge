@@ -170,14 +170,14 @@ JSON 顶层格式固定为：
 | 4 | 验证或预检失败 |
 | 5 | 执行失败 |
 
-## 9. Windows Artifact
+## 9. 桌面端发布包
 
-GitHub 的 **Package Windows** workflow 在 `BDSubMerge-windows-x64` artifact 中生成
-`BDSubMerge-<version>-windows-x64.zip` 和对应 SHA-256 文件。校验哈希后完整解压
-onedir 包，并保持 `_internal` 和本项目的 `LICENSE` 与程序目录结构不变。依赖与参考项目
-在仓库 README 中列明，不再重复打入发布 ZIP。workflow 会清除 Python 环境变量，从含
-中文和空格的路径启动最终 ZIP 进行烟测，还会校验内嵌版本，并由最终 EXE 生成中文浅色
-和英文深色截图证据。
+GitHub 的 **Package Desktop** workflow 会并行构建 Windows 与 Linux，生成
+`BDSubMerge-<version>-windows-x64.zip` 和 `BDSubMerge-<version>-linux-x86_64.tar.gz`，
+并分别提供 SHA-256 文件。校验哈希后完整解压 onedir 包，并保持 `_internal` 和本项目的
+`LICENSE` 与程序目录结构不变。依赖与参考项目在仓库 README 中列明，不再重复打入发布包。
+workflow 会清除 Python 环境变量后烟测两个原生包，校验内嵌版本，并分别生成中文浅色和
+英文深色截图证据；Linux GUI 通过 Xvfb 下的原生 `xcb` 插件验证。
 
 对应 GitHub Release 发布前，Actions artifact 属于发布候选。Windows CI 会创建隔离的
 临时 SMB 共享，并在真实 UNC 路径上验证扫描、预检和原子写入；商业原盘夹具广度和

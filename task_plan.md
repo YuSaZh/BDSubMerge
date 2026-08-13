@@ -4,7 +4,7 @@
 已按照项目任务书完成并发布 BDSubMerge 1.0；当前使用本机 Python 3.12 完成 Python 依赖、测试、质量检查、构建与打包，需要新增非 Python 环境的验证由精确提交 SHA 的 GitHub Actions 完成。
 
 ## 当前阶段
-阶段 9/9 发布 `v1.0.2-beta.1` 测试版
+阶段 10/10 发布 Windows/Linux `v1.0.2-beta.2` 测试版
 
 ## 工作模型（2026-08-13 用户最新确认）
 1. `v1.0.0` 发布基线为提交 `e42354dab36b3897f94da201259dc17b9550a02a`；CI run `31699687423` 与正式 Package/Release run `31702184769` 均成功。
@@ -110,8 +110,18 @@
 - [x] 将 Python 包版本更新为 PEP 440 `1.0.2b1`，并映射到 SemVer 标签 `v1.0.2-beta.1`
 - [x] 补充双语 README、Changelog 和包含实际改动摘要的 Release notes
 - [x] 完成本机 Python 3.12 测试、Ruff、Mypy、构建与 Windows 包审计
-- [ ] 提交并推送 `main`，按精确提交 SHA 审计 GitHub Actions
-- [ ] 创建并推送 annotated tag，验证 prerelease、ZIP、SHA256 和许可证结构
+- [x] 提交并推送 `main`，按精确提交 SHA 审计 GitHub Actions
+- [x] 创建并推送 annotated tag，验证 prerelease、ZIP、SHA256 和许可证结构
+- **状态：** complete
+
+### 阶段 10：v1.0.2-beta.2 双平台测试版发布
+- [x] 按真实运行窗口修正字幕映射表和输出目标表的默认列宽、完整文本与 `No.` 标题
+- [x] 将零点前事件中文诊断改为解释事件为何不会出现在输出字幕中
+- [x] 新增 Linux x86_64 onedir tar.gz，与 Windows x64 并行构建并共同阻断 Release
+- [x] 更新 beta.2 版本、双语下载说明、Changelog 与完整 Release notes
+- [x] 执行一次针对性本地回归和静态检查
+- [ ] 推送后执行一次正式 CI，成功即创建 tag 并发布双平台资产
+- [ ] 审计公开 Windows/Linux 包、SHA256、许可证结构和启动证据
 - **状态：** in_progress
 
 ## 关键约束

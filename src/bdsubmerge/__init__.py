@@ -1,3 +1,3 @@
 """BDSubMerge package."""
 
-__version__ = "1.0.2b1"
+__version__ = "1.0.2b2"

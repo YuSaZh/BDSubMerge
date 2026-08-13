@@ -397,11 +397,8 @@ class MainWindow(QMainWindow):
         self.mapping_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive
         )
-        self.mapping_table.horizontalHeader().setMinimumSectionSize(54)
-        for column, width in enumerate(
-            (58, 480, 70, 120, 150, 150, 120, 90, 90, 90, 160)
-        ):
-            self.mapping_table.setColumnWidth(column, width)
+        self.mapping_table.horizontalHeader().setMinimumSectionSize(32)
+        self.mapping_table.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.mapping_table.setMinimumHeight(190)
         subtitle_layout.addLayout(subtitle_toolbar)
         subtitle_layout.addWidget(self.mapping_table)
@@ -455,13 +452,11 @@ class MainWindow(QMainWindow):
             QTableWidget.EditTrigger.NoEditTriggers
         )
         self.output_targets_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+            QHeaderView.ResizeMode.Interactive
         )
-        self.output_targets_table.horizontalHeader().setSectionResizeMode(
-            2,
-            QHeaderView.ResizeMode.Stretch,
-        )
+        self.output_targets_table.horizontalHeader().setMinimumSectionSize(32)
         self.output_targets_table.horizontalHeader().setStretchLastSection(False)
+        self.output_targets_table.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.output_targets_table.setMaximumHeight(130)
         output_target_actions = QHBoxLayout()
         self.add_output_target_button = QPushButton()
@@ -755,6 +750,8 @@ class MainWindow(QMainWindow):
                 tr("output.backup"),
             )
         )
+        self._resize_mapping_columns()
+        self._resize_output_target_columns()
         self.add_output_target_button.setText(tr("output.add_target"))
         self.remove_output_target_button.setText(tr("output.remove_target"))
         self.output_browse.setText(tr("common.browse"))
@@ -1102,12 +1099,15 @@ class MainWindow(QMainWindow):
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, state.id)
+                if column == 2:
+                    item.setToolTip(value)
                 self.output_targets_table.setItem(row, column, item)
             if state.id == selected_id:
                 selected_row = row
         if self.output_states:
             self.output_targets_table.selectRow(selected_row)
         self.output_targets_table.blockSignals(False)
+        self._resize_output_target_columns()
         self.remove_output_target_button.setEnabled(len(self.output_states) > 1)
 
     @Slot()
@@ -2037,7 +2037,37 @@ class MainWindow(QMainWindow):
                 if column == 1:
                     item.setToolTip(str(asset.path))
                 self.mapping_table.setItem(row, column, item)
-        self.mapping_table.resizeColumnToContents(1)
+        self._resize_mapping_columns()
+
+    def _resize_mapping_columns(self) -> None:
+        self._resize_table_columns(self.mapping_table, combo_columns=(4, 5))
+
+    def _resize_output_target_columns(self) -> None:
+        self._resize_table_columns(self.output_targets_table)
+
+    @staticmethod
+    def _resize_table_columns(
+        table: QTableWidget,
+        *,
+        combo_columns: tuple[int, ...] = (),
+    ) -> None:
+        metrics = table.fontMetrics()
+        for column in range(table.columnCount()):
+            header = table.horizontalHeaderItem(column)
+            texts = [header.text()] if header is not None else []
+            for row in range(table.rowCount()):
+                item = table.item(row, column)
+                if item is not None:
+                    texts.append(item.text())
+                widget = table.cellWidget(row, column)
+                if isinstance(widget, QComboBox):
+                    texts.append(str(widget.currentData() or widget.currentText()))
+            content_width = max(
+                (metrics.horizontalAdvance(text) for text in texts),
+                default=0,
+            )
+            padding = 42 if column in combo_columns else 24
+            table.setColumnWidth(column, content_width + padding)
 
     @Slot()
     def remove_subtitles(self) -> None:
@@ -3102,6 +3132,7 @@ class MainWindow(QMainWindow):
                 mapping.start_boundary.id,
                 mapping.end_boundary.id,
             )
+        self._resize_mapping_columns()
         self._show_timeline()
 
     @Slot()

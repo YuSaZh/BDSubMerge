@@ -793,6 +793,12 @@ def test_output_target_table_shows_complete_localized_summary(
         "覆盖前备份",
         "是",
     )
+    path_item = window.output_targets_table.item(0, 2)
+    assert path_item.toolTip() == str(target)
+    assert window.output_targets_table.textElideMode() is Qt.TextElideMode.ElideNone
+    assert window.output_targets_table.columnWidth(2) >= (
+        window.output_targets_table.fontMetrics().horizontalAdvance(str(target)) + 24
+    )
 
 
 def test_loading_subtitles_refreshes_output_format_summary(
@@ -1829,6 +1835,10 @@ def test_mapping_layout_is_resizable_and_report_options_are_collapsed(
         is QHeaderView.ResizeMode.Interactive
         for column in range(window.mapping_table.columnCount())
     )
+    assert window.mapping_table.horizontalHeaderItem(0).text() == "No."
+    assert window.mapping_table.textElideMode() is Qt.TextElideMode.ElideNone
+    no_width = window.mapping_table.fontMetrics().horizontalAdvance("No.") + 24
+    assert window.mapping_table.columnWidth(0) == no_width
     assert window.report_configuration.isHidden()
 
     window.report_enabled.setChecked(True)
@@ -1850,7 +1860,7 @@ def test_mapping_filename_tooltip_and_chinese_issue_text(
 
     assert window.mapping_table.item(0, 1).toolTip() == str(subtitle)
     filename_width = window.mapping_table.fontMetrics().horizontalAdvance(subtitle.name)
-    assert window.mapping_table.columnWidth(1) >= filename_width
+    assert window.mapping_table.columnWidth(1) >= filename_width + 24
     issue = ApplicationIssue(
         ApplicationSeverity.WARNING,
         "low_mapping_confidence",
@@ -1866,7 +1876,7 @@ def test_mapping_filename_tooltip_and_chinese_issue_text(
         str(subtitle),
     )
     prefixed_message = window._format_issue(prefixed_issue)
-    assert "应用时间偏移后，结束时间不晚于零的事件已丢弃" in prefixed_message  # noqa: RUF001
+    assert "完全落在成片时间轴 0 秒之前，因此不会写入输出字幕" in prefixed_message  # noqa: RUF001
     assert "原始信息: event ends at or before zero" in prefixed_message
     assert window._grouped_issue_lines((prefixed_issue, prefixed_issue))[0].endswith("(x2)")
     assert window._localized_mapping_warnings(

@@ -183,16 +183,16 @@ Exit codes:
 | 4 | Validation or preflight failed |
 | 5 | Operation failed |
 
-## 9. Windows Artifact
+## 9. Desktop Artifacts
 
-The **Package Windows** GitHub workflow produces
-`BDSubMerge-<version>-windows-x64.zip` and its SHA-256 file in the
-`BDSubMerge-windows-x64` artifact. Verify the checksum, extract the complete onedir package,
-and keep `_internal` and this project's `LICENSE` beside the executable. Dependency references
-remain documented in the repository README and are not duplicated into the release archive.
-The workflow smoke-tests the final ZIP from a Chinese and space-containing path with Python
-environment variables removed. It also verifies the embedded version and captures distinct
-Chinese/light and English/dark screenshots from the packaged executable.
+The **Package Desktop** GitHub workflow builds Windows and Linux in parallel. It produces
+`BDSubMerge-<version>-windows-x64.zip` and `BDSubMerge-<version>-linux-x86_64.tar.gz`, each with a
+matching SHA-256 file. Verify the checksum, extract the complete onedir package, and keep
+`_internal` and this project's `LICENSE` beside the executable. Dependency references remain
+documented in the repository README and are not duplicated into the release archives.
+The workflow smoke-tests both final archives with Python environment variables removed. It also
+verifies the embedded version and captures distinct Chinese/light and English/dark screenshots
+from each packaged executable. Linux GUI checks run through the native `xcb` plugin under Xvfb.
 
 An Actions artifact is a release candidate until the corresponding GitHub Release is published.
 Windows CI creates an isolated temporary SMB share and verifies real UNC scan, preflight, and

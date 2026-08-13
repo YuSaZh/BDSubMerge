@@ -141,3 +141,10 @@
 - EXE `--expect-version` 应校验内部版本 `1.0.2b1`，ZIP 文件名和 GitHub Release 标题则应使用
   `1.0.2-beta.1`，避免用户面对 Python 版本拼法。
 - 现有 Release 创建逻辑会把含连字符的 tag 标记为 prerelease，可直接覆盖本测试版语义。
+# v1.0.2-beta.2 发行发现（2026-08-14）
+
+- 用户实际运行窗口证明 `resizeColumnToContents` 只进行一次内容测量仍会让字幕名被省略；输出目标表
+  的路径列虽然为 Stretch，也会被其他 `ResizeToContents` 列挤压。需要完整内容定宽配合水平滚动。
+- Linux CI 既有 UI 截图只使用 `offscreen` 插件，不能代表公开 GUI 包可在 X11 启动；首个 Linux
+  发行包必须通过 PyInstaller 原生构建以及 Xvfb 下的 `xcb` 启动和截图门禁。
+- Linux onedir 使用 tar.gz 保留可执行权限；ZIP 不适合作为首个 Linux 原生发行格式。

@@ -1,4 +1,4 @@
-name: Package Windows
+name: Package Desktop
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  package:
+  package-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -205,9 +205,140 @@ jobs:
             reports/package-ui/BDSubMerge-en-dark.png
           if-no-files-found: error
 
+  package-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          architecture: x64
+          cache: pip
+      - name: Install Linux GUI runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "x86_64"
+          sudo apt-get update
+          sudo apt-get install --yes \
+            fonts-noto-cjk libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0 \
+            xauth xvfb
+      - name: Resolve project and release versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          project_version="$(python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])")"
+          if [[ "$project_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(b([1-9][0-9]*))?$ ]]; then
+            release_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+            if [[ -n "${BASH_REMATCH[5]:-}" ]]; then
+              release_version+="-beta.${BASH_REMATCH[5]}"
+            fi
+          else
+            echo "Unsupported stable or beta PEP 440 version: $project_version" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME#v}" != "$release_version" ]]; then
+            echo "Release tag $GITHUB_REF_NAME does not match package version $project_version" >&2
+            exit 1
+          fi
+          echo "BDSUBMERGE_VERSION=$project_version" >> "$GITHUB_ENV"
+          echo "BDSUBMERGE_RELEASE_VERSION=$release_version" >> "$GITHUB_ENV"
+      - name: Install project
+        run: >-
+          python -m pip install --upgrade pip &&
+          python -m pip install -c constraints/ci.txt ".[gui,packaging]"
+      - name: Build onedir package
+        run: >-
+          pyinstaller --noconfirm --clean --onedir --windowed
+          --name BDSubMerge
+          --collect-data bdsubmerge
+          --collect-all shinya
+          --collect-all pysubs2
+          src/bdsubmerge/app.py
+      - name: Include and verify project license
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp LICENSE dist/BDSubMerge/LICENSE
+          required=(
+            dist/BDSubMerge/BDSubMerge
+            dist/BDSubMerge/_internal/bdsubmerge/resources/i18n/en_US.json
+            dist/BDSubMerge/_internal/bdsubmerge/resources/i18n/zh_CN.json
+            dist/BDSubMerge/LICENSE
+          )
+          for path in "${required[@]}"; do
+            test -f "$path"
+          done
+          test ! -e dist/BDSubMerge/LICENSES
+          test ! -e dist/BDSubMerge/THIRD_PARTY_NOTICES.md
+      - name: Create tarball and SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="BDSubMerge-$BDSUBMERGE_RELEASE_VERSION-linux-x86_64.tar.gz"
+          tar --create --gzip --file "dist/$archive" --directory dist BDSubMerge
+          (cd dist && sha256sum "$archive" > "$archive.sha256")
+      - name: Smoke-test final archive without system Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_root="$RUNNER_TEMP/BDSubMerge final package no Python"
+          working_directory="$smoke_root/working directory"
+          mkdir -p "$working_directory"
+          tar --extract --gzip \
+            --file "dist/BDSubMerge-$BDSUBMERGE_RELEASE_VERSION-linux-x86_64.tar.gz" \
+            --directory "$smoke_root"
+          executable="$smoke_root/BDSubMerge/BDSubMerge"
+          test -x "$executable"
+          env --ignore-environment \
+            HOME="$HOME" PATH="/usr/bin:/bin" QT_QPA_PLATFORM=xcb \
+            xvfb-run --auto-servernum "$executable" \
+            --smoke-test --expect-version "$BDSUBMERGE_VERSION"
+      - name: Capture final executable visual evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          executable="$RUNNER_TEMP/BDSubMerge final package no Python/BDSubMerge/BDSubMerge"
+          working_directory="$RUNNER_TEMP/BDSubMerge final package no Python/working directory"
+          evidence_root="$GITHUB_WORKSPACE/reports/package-ui-linux"
+          mkdir -p "$evidence_root"
+          for capture in "zh_CN light" "en_US dark"; do
+            read -r locale theme <<< "$capture"
+            destination="$evidence_root/BDSubMerge-$locale-$theme.png"
+            (
+              cd "$working_directory"
+              env --ignore-environment \
+                HOME="$HOME" PATH="/usr/bin:/bin" QT_QPA_PLATFORM=xcb \
+                xvfb-run --auto-servernum "$executable" \
+                --capture-screenshot "$destination" \
+                --locale "$locale" --theme "$theme" \
+                --expect-version "$BDSUBMERGE_VERSION"
+            )
+            test "$(stat --format=%s "$destination")" -ge 30000
+          done
+          test "$(sha256sum "$evidence_root"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 2
+      - name: Verify release checksum
+        working-directory: dist
+        run: sha256sum --check "BDSubMerge-$BDSUBMERGE_RELEASE_VERSION-linux-x86_64.tar.gz.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: BDSubMerge-linux-x86_64
+          path: |
+            dist/BDSubMerge-*-linux-x86_64.tar.gz
+            dist/BDSubMerge-*-linux-x86_64.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+      - uses: actions/upload-artifact@v7
+        with:
+          name: BDSubMerge-linux-x86_64-visual-evidence
+          path: reports/package-ui-linux/*.png
+          if-no-files-found: error
+
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: package
+    needs: [package-windows, package-linux]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -218,9 +349,13 @@ jobs:
         with:
           name: BDSubMerge-windows-x64
           path: release-files
+      - uses: actions/download-artifact@v7
+        with:
+          name: BDSubMerge-linux-x86_64
+          path: release-files
       - name: Verify downloaded release files
         working-directory: release-files
-        run: sha256sum --check BDSubMerge-*-windows-x64.zip.sha256
+        run: sha256sum --check BDSubMerge-*.sha256
       - name: Require successful CI for the release commit
         shell: bash
         env:
@@ -253,4 +388,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "${release_flags[@]}" \
             release-files/BDSubMerge-*-windows-x64.zip \
-            release-files/BDSubMerge-*-windows-x64.zip.sha256
+            release-files/BDSubMerge-*-windows-x64.zip.sha256 \
+            release-files/BDSubMerge-*-linux-x86_64.tar.gz \
+            release-files/BDSubMerge-*-linux-x86_64.tar.gz.sha256
