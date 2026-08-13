@@ -28,6 +28,8 @@ from bdsubmerge.subtitles import (
     TextSubtitleInfo,
 )
 
+from .reporting import MergeExecutionReport, MergeReportTarget
+
 
 class ApplicationSeverity(StrEnum):
     ERROR = "error"
@@ -120,6 +122,7 @@ class PrepareMergeRequest:
     accept_low_confidence: bool = False
     require_existing_sources: bool = True
     additional_boundaries: tuple[TimelineBoundary, ...] = field(default_factory=tuple)
+    report_target: MergeReportTarget | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,15 +132,24 @@ class PreparedMerge:
     report: MergeReport | None
     payload: str | bytes | None
     issues: tuple[ApplicationIssue, ...]
+    execution_report: MergeExecutionReport | None = None
+    report_preflight: PreflightResult | None = None
+    report_payload: str | None = None
 
     @property
     def ready(self) -> bool:
+        report_ready = self.report_preflight is None or (
+            self.report_preflight.ready
+            and self.execution_report is not None
+            and self.report_payload is not None
+        )
         return (
             self.mapping is not None
             and self.output_preflight is not None
             and self.output_preflight.ready
             and self.report is not None
             and self.payload is not None
+            and report_ready
             and not _has_errors(self.issues)
         )
 

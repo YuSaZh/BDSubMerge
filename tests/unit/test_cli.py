@@ -12,6 +12,7 @@ from bdsubmerge.application import (
     InspectRequest,
     InspectResult,
     MergeApplicationService,
+    MergeReportFormat,
     ScanRequest,
     ScanResult,
     SubtitleApplicationService,
@@ -299,3 +300,28 @@ def test_prepared_output_reports_original_stored_preset(tmp_path: Path) -> None:
     assert isinstance(outputs[0], dict)
     assert outputs[0]["preset"] == "full_path"
     assert outputs[0]["stored_preset"] == "jriver"
+
+
+def test_merge_report_flags_create_a_project_protected_target(tmp_path: Path) -> None:
+    project_path = tmp_path / "show.bdsm.json"
+    report_path = tmp_path / "merge-report.txt"
+    arguments = build_parser().parse_args(
+        (
+            "merge",
+            str(project_path),
+            "--report",
+            str(report_path),
+            "--report-format",
+            "text",
+            "--report-collision",
+            "backup",
+        )
+    )
+
+    target = cli_module._report_target(arguments)
+
+    assert target is not None
+    assert target.path == report_path
+    assert target.report_format is MergeReportFormat.TEXT
+    assert target.collision_policy is CollisionPolicy.BACKUP
+    assert target.protected_paths == (project_path,)

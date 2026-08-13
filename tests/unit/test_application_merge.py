@@ -1,10 +1,15 @@
+import json
 from dataclasses import replace
 from pathlib import Path
+
+import pytest
 
 from bdsubmerge.application import (
     ExecuteMergeRequest,
     LoadSubtitlesRequest,
     MergeApplicationService,
+    MergeReportFormat,
+    MergeReportTarget,
     PrepareMergeRequest,
     SubtitleApplicationService,
     SubtitleInput,
@@ -24,7 +29,7 @@ from bdsubmerge.mapping import (
     MappingLock,
     boundary,
 )
-from bdsubmerge.output import FullPathOutputTarget
+from bdsubmerge.output import CollisionPolicy, FullPathOutputTarget
 
 ASS = (
     b"[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n"
@@ -404,3 +409,122 @@ def test_invalid_additional_boundary_returns_mapping_failed(tmp_path: Path) -> N
 
         assert prepared.mapping is None
         assert {issue.code for issue in prepared.issues} == {"mapping_failed"}
+
+
+@pytest.mark.parametrize(
+    ("report_format", "extension"),
+    ((MergeReportFormat.JSON, "json"), (MergeReportFormat.TEXT, "txt")),
+)
+def test_optional_report_is_written_with_subtitle_in_one_transaction(
+    tmp_path: Path,
+    report_format: MergeReportFormat,
+    extension: str,
+) -> None:
+    private_body = "private subtitle body must not enter reports"
+    subtitle_data = ASS.replace(b",Default,line", f",Default,{private_body}".encode())
+    layout = _layout(tmp_path)
+    playlist = _playlist(layout)
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(subtitle_data)
+    subtitles = SubtitleApplicationService(read_bytes=lambda path: subtitle_data).load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    destination = tmp_path / "output.ass"
+    report_path = tmp_path / f"merge-report.{extension}"
+    service = MergeApplicationService()
+
+    prepared = service.prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("output", path=destination),),
+            report_target=MergeReportTarget(report_path, report_format),
+        )
+    )
+    result = service.execute(ExecuteMergeRequest(prepared))
+
+    assert prepared.ready is True
+    assert prepared.execution_report is not None
+    assert prepared.report_payload is not None
+    assert private_body not in prepared.report_payload
+    assert result.succeeded is True
+    assert result.receipt is not None
+    assert result.receipt.paths == (destination, report_path)
+    assert private_body in destination.read_text(encoding="utf-8-sig")
+    if report_format is MergeReportFormat.JSON:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+        assert payload["playlist"]["stem"] == "00001"
+        assert payload["play_items"][0]["logical_end_90k"] == 60 * 90_000
+        assert payload["episodes"][0]["effective_end_90k"] == 60 * 90_000
+        assert payload["output_paths"] == [str(destination)]
+        assert len(payload["source_fingerprints"]) == 3
+    else:
+        report_text = report_path.read_text(encoding="utf-8")
+        assert "PlayItem timeline" in report_text
+        assert "logical_90k=0..5400000" in report_text
+        assert f"report: {report_path}" in report_text
+
+
+def test_report_commit_failure_leaves_subtitle_output_unwritten(tmp_path: Path) -> None:
+    layout = _layout(tmp_path)
+    playlist = _playlist(layout)
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    subtitles = SubtitleApplicationService(read_bytes=lambda path: ASS).load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    destination = tmp_path / "output.ass"
+    report_path = tmp_path / "merge-report.json"
+    service = MergeApplicationService()
+    prepared = service.prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("output", path=destination),),
+            report_target=MergeReportTarget(report_path, MergeReportFormat.JSON),
+        )
+    )
+    report_path.write_text("appeared after preflight", encoding="utf-8")
+
+    result = service.execute(ExecuteMergeRequest(prepared))
+
+    assert prepared.ready is True
+    assert result.succeeded is False
+    assert {issue.code for issue in result.issues} == {"output_write_failed"}
+    assert destination.exists() is False
+    assert report_path.read_text(encoding="utf-8") == "appeared after preflight"
+    assert tuple(tmp_path.glob(".*.tmp")) == ()
+    assert tuple(tmp_path.glob(".*.rollback")) == ()
+
+
+def test_report_target_cannot_overwrite_project_file(tmp_path: Path) -> None:
+    layout = _layout(tmp_path)
+    playlist = _playlist(layout)
+    subtitle_path = tmp_path / "episode.ass"
+    subtitle_path.write_bytes(ASS)
+    subtitles = SubtitleApplicationService(read_bytes=lambda path: ASS).load_ordered(
+        LoadSubtitlesRequest((SubtitleInput(subtitle_path),))
+    )
+    project_path = tmp_path / "show.bdsm.json"
+    project_path.write_text("project snapshot", encoding="utf-8")
+
+    prepared = MergeApplicationService().prepare(
+        PrepareMergeRequest(
+            layout,
+            playlist,
+            subtitles,
+            (FullPathOutputTarget("output", path=tmp_path / "output.ass"),),
+            report_target=MergeReportTarget(
+                project_path,
+                MergeReportFormat.JSON,
+                CollisionPolicy.OVERWRITE,
+                (project_path,),
+            ),
+        )
+    )
+
+    assert prepared.ready is False
+    assert "report_overwrites_input" in {issue.code for issue in prepared.issues}
+    assert project_path.read_text(encoding="utf-8") == "project snapshot"

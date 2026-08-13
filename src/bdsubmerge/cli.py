@@ -24,6 +24,8 @@ from bdsubmerge.application import (
     LoadSubtitlesRequest,
     LoadSubtitlesResult,
     MergeApplicationService,
+    MergeReportFormat,
+    MergeReportTarget,
     PreparedMerge,
     PrepareMergeRequest,
     ScanRequest,
@@ -46,6 +48,11 @@ from bdsubmerge.project import (
     project_to_data,
     resolve_output_path,
     resolve_path,
+)
+from bdsubmerge.runtime_logging import (
+    configure_runtime_logging,
+    record_runtime_event,
+    record_runtime_exception,
 )
 
 
@@ -144,6 +151,22 @@ def build_parser() -> argparse.ArgumentParser:
         command = subparsers.add_parser(name, help=help_text)
         command.add_argument("project", type=Path)
         _add_common_options(command, suppress=True)
+        if name == "merge":
+            command.add_argument(
+                "--report",
+                type=Path,
+                help="atomically write an optional merge report",
+            )
+            command.add_argument(
+                "--report-format",
+                choices=tuple(item.value for item in MergeReportFormat),
+                default=MergeReportFormat.JSON.value,
+            )
+            command.add_argument(
+                "--report-collision",
+                choices=tuple(item.value for item in CollisionPolicy),
+                default=CollisionPolicy.ABORT.value,
+            )
     return parser
 
 
@@ -176,16 +199,21 @@ def main(
     if arguments.command is None:
         return int(ExitCode.OK)
 
+    if services is None:
+        configure_runtime_logging()
     runtime = services or _default_services()
+    record_runtime_event("cli_command_started", command=arguments.command)
     try:
         result = _dispatch(arguments, runtime)
     except (OSError, ProjectSchemaError, ValueError) as error:
+        record_runtime_exception("cli_command_failed", error, command=arguments.command)
         result = CommandResult(
             arguments.command,
             ExitCode.INPUT_ERROR,
             issues=(CliIssue("error", "invalid_input", str(error)),),
         )
     except Exception as error:
+        record_runtime_exception("cli_command_failed", error, command=arguments.command)
         result = CommandResult(
             arguments.command,
             ExitCode.OPERATION_FAILED,
@@ -195,6 +223,12 @@ def main(
     if not result.ok and not arguments.json:
         for issue in result.issues:
             print(f"{issue.severity}: {issue.code}: {issue.message}", file=error_output)
+    record_runtime_event(
+        "cli_command_completed",
+        command=result.command,
+        exit_code=int(result.exit_code),
+        issue_codes=tuple(issue.code for issue in result.issues),
+    )
     return int(result.exit_code)
 
 
@@ -277,7 +311,13 @@ def _project_operation(
             issues,
         )
 
-    prepared, preparation_issues = _prepare_project(project, project_path, services)
+    report_target = _report_target(arguments) if arguments.command == "merge" else None
+    prepared, preparation_issues = _prepare_project(
+        project,
+        project_path,
+        services,
+        report_target=report_target,
+    )
     if prepared is None:
         return CommandResult(
             arguments.command,
@@ -321,6 +361,8 @@ def _prepare_project(
     project: ProjectSnapshot,
     project_path: Path,
     services: CliServices,
+    *,
+    report_target: MergeReportTarget | None = None,
 ) -> tuple[PreparedMerge | None, tuple[CliIssue, ...]]:
     structure_issues = _project_structure_issues(project)
     if structure_issues:
@@ -375,6 +417,7 @@ def _prepare_project(
                 clip_negative_starts=policy.clip_negative_starts,
             ),
             accept_low_confidence=True,
+            report_target=report_target,
         )
     )
     reproduction_issues = _reproduction_issues(
@@ -611,7 +654,25 @@ def _prepared_data(
         "outputs": outputs,
         "mapping": _json_value(prepared.mapping),
         "report": _json_value(prepared.report),
+        "execution_report": _json_value(prepared.execution_report),
+        "report_outputs": (
+            _json_value(prepared.report_preflight.outputs)
+            if prepared.report_preflight is not None
+            else []
+        ),
     }
+
+
+def _report_target(arguments: argparse.Namespace) -> MergeReportTarget | None:
+    path = getattr(arguments, "report", None)
+    if path is None:
+        return None
+    return MergeReportTarget(
+        path,
+        MergeReportFormat(str(arguments.report_format)),
+        CollisionPolicy(str(arguments.report_collision)),
+        (Path(arguments.project),),
+    )
 
 
 def _playlist_summary(playlist: PlaylistInfo, verbose: bool) -> dict[str, object]:

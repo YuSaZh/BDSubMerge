@@ -126,10 +126,18 @@ bdsubmerge inspect <mpls> [--max-depth N]
 bdsubmerge plan <project.bdsm.json>
 bdsubmerge validate <project.bdsm.json>
 bdsubmerge merge <project.bdsm.json> [--dry-run]
+  [--report <path>] [--report-format json|text]
+  [--report-collision abort|overwrite|backup|auto_rename]
 ```
 
 `plan` 只显示持久化项目，不执行合并；`validate` 重新加载输入、复现锁定映射并执行
-输出预检；`merge` 才执行事务输出。
+输出预检；`merge` 才执行事务输出。指定 `--report` 后，UTF-8 JSON 或文本报告会与字幕
+输出一起预检，并在同一个原子事务中提交。报告不能写入 BDMV 树、输入文件、字幕输出
+或项目文件本身。
+
+运行日志是平台用户数据日志目录中的有界 JSON Lines 文件（Windows 默认为
+`%LOCALAPPDATA%\BDSubMerge\logs`）。日志包含版本、路径、映射/输出诊断和异常堆栈帧，
+但不会记录字幕正文或异常消息。
 
 JSON 顶层格式固定为：
 
@@ -155,13 +163,14 @@ JSON 顶层格式固定为：
 
 ## 9. Windows Artifact
 
-GitHub 的 **Package Windows** workflow 使用 PyInstaller onedir 生成
-`BDSubMerge-windows-x64` artifact。请从成功的 Actions 运行下载并完整解压，保持
-`_internal`、`LICENSE` 和 `THIRD_PARTY_NOTICES.md` 与程序目录结构不变。workflow 会在
-上传前冒烟测试 GUI 并检查翻译资源。
+GitHub 的 **Package Windows** workflow 在 `BDSubMerge-windows-x64` artifact 中生成
+`BDSubMerge-windows-x64.zip` 和对应 SHA-256 文件。校验哈希后完整解压 onedir 包，并保持
+`_internal`、`LICENSE`、`LICENSES` 和 `THIRD_PARTY_NOTICES.md` 与程序目录结构不变。
+workflow 会清除 Python 环境变量，从含中文和空格的路径启动最终 ZIP 中的程序进行烟测。
 
-在明确发布 release 前，该 artifact 仍是开发构建。真实 UNC/SMB 写入仍需连接实际共享
-验证；当前自动化只在不接触服务器的条件下验证 Windows UNC 路径和预检。
+在明确发布 release 前，该 artifact 仍是开发构建。Windows CI 会创建隔离的临时 SMB
+共享，并在真实 UNC 路径上验证扫描、预检和原子写入；商业原盘夹具广度和干净的
+Windows 10/11 桌面仍属于独立验证项。
 
 ## 10. 安全与开发规则
 
@@ -172,4 +181,4 @@ GitHub 的 **Package Windows** workflow 使用 PyInstaller onedir 生成
 - 仓库贡献者禁止本机构建、测试、lint、类型检查、安装依赖或打包，必须推送后使用
   GitHub Actions 验证。
 
-当前真实验证缺口是实际 MPLS/SUP fixture 覆盖广度和真实 UNC 写入行为。
+当前真实验证缺口是实际 MPLS/SUP fixture 覆盖广度和干净的 Windows 10/11 桌面。

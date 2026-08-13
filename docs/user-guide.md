@@ -136,10 +136,19 @@ bdsubmerge inspect <mpls> [--max-depth N]
 bdsubmerge plan <project.bdsm.json>
 bdsubmerge validate <project.bdsm.json>
 bdsubmerge merge <project.bdsm.json> [--dry-run]
+  [--report <path>] [--report-format json|text]
+  [--report-collision abort|overwrite|backup|auto_rename]
 ```
 
 `plan` displays the stored project without executing it. `validate` reloads all inputs,
 reproduces locked mapping, and runs output preflight. `merge` performs transactional output.
+When `--report` is supplied, the UTF-8 JSON or text report is preflighted and committed in the
+same atomic transaction as the subtitle outputs. A report cannot target the BDMV tree, an input,
+an output, or the project file itself.
+
+Runtime logs are bounded JSON Lines files in the platform user-data log directory (for example,
+`%LOCALAPPDATA%\BDSubMerge\logs` on Windows). They contain versions, paths, mapping/output
+diagnostics, and exception stack frames, but never subtitle body text or exception messages.
 
 JSON output has this stable top-level envelope:
 
@@ -165,14 +174,16 @@ Exit codes:
 
 ## 9. Windows Artifact
 
-The **Package Windows** GitHub workflow produces the `BDSubMerge-windows-x64` artifact as a
-PyInstaller onedir package. Download it from a successful Actions run, extract the entire
-folder, and keep `_internal`, `LICENSE`, and `THIRD_PARTY_NOTICES.md` beside the executable.
-The workflow smoke-tests the packaged GUI and verifies translation resources before upload.
+The **Package Windows** GitHub workflow produces `BDSubMerge-windows-x64.zip` and its SHA-256
+file in the `BDSubMerge-windows-x64` artifact. Verify the checksum, extract the complete onedir
+package, and keep `_internal`, `LICENSE`, `LICENSES`, and `THIRD_PARTY_NOTICES.md` beside the
+executable. The workflow smoke-tests the final ZIP from a Chinese and space-containing path
+with Python environment variables removed before upload.
 
-The artifact is a development build until a release is explicitly published. Actual UNC/SMB
-writes still need verification against a live share; current automated coverage validates
-Windows UNC path resolution and preflight without contacting a server.
+The artifact is a development build until a release is explicitly published. Windows CI creates
+an isolated temporary SMB share and verifies real UNC scan, preflight, and atomic output there;
+commercial-disc fixture breadth and a clean Windows 10/11 desktop remain separate validation
+concerns.
 
 ## 10. Safety and Development Policy
 
@@ -183,4 +194,4 @@ Windows UNC path resolution and preflight without contacting a server.
 - Repository contributors must not build, test, lint, type-check, install dependencies, or
   package locally. Push changes and use GitHub Actions for validation.
 
-Known validation gaps are real-world MPLS/SUP fixture breadth and live UNC write behavior.
+Known validation gaps are real-world MPLS/SUP fixture breadth and a clean Windows 10/11 desktop.

@@ -6,9 +6,20 @@ import sys
 from collections.abc import Sequence
 from importlib import import_module
 
+from bdsubmerge.runtime_logging import configure_runtime_logging, record_runtime_exception
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Start the high-DPI PySide6 desktop workspace."""
+    configure_runtime_logging()
+    try:
+        return _run(argv)
+    except Exception as error:
+        record_runtime_exception("gui_runtime_failed", error)
+        raise
+
+
+def _run(argv: Sequence[str] | None = None) -> int:
     from PySide6.QtCore import QCoreApplication, Qt
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import QApplication

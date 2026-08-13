@@ -232,9 +232,10 @@ def _merged_attachment_section(
     sources: tuple[MergeSource[AssDocument], ...],
     section_name: str,
     notices: list[MergeNotice],
-) -> AssSection | None:
+) -> tuple[AssSection | None, int]:
     attachments: list[_Attachment] = []
     by_name: dict[str, list[_Attachment]] = {}
+    deduplicated = 0
     header = f"[{section_name.title()}]"
     for source in sources:
         section = source.document.section(section_name)
@@ -244,6 +245,7 @@ def _merged_attachment_section(
         for attachment in _parse_attachments(section):
             matches = by_name.get(attachment.name.casefold(), [])
             if any(match.digest == attachment.digest for match in matches):
+                deduplicated += 1
                 continue
             if matches:
                 stem = f"{attachment.name}__{source.label}"
@@ -264,9 +266,9 @@ def _merged_attachment_section(
             attachments.append(attachment)
             by_name.setdefault(attachment.name.casefold(), []).append(attachment)
     if not attachments:
-        return None
+        return None, deduplicated
     entries = tuple(AssRawLine(line) for attachment in attachments for line in attachment.lines)
-    return AssSection(section_name, header, entries)
+    return AssSection(section_name, header, entries), deduplicated
 
 
 _EXTRADATA_RE = re.compile(r"^(?P<prefix>Data:\s*)(?P<id>\d+)(?P<tail>,.*)$", re.IGNORECASE)
@@ -411,8 +413,12 @@ def merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
     }
     if extradata_section is not None:
         replacements["aegisub extradata"] = extradata_section
+    attachment_deduplicated = 0
     for attachment_name in ("Fonts", "Graphics"):
-        attachment_section = _merged_attachment_section(sources, attachment_name, notices)
+        attachment_section, deduplicated = _merged_attachment_section(
+            sources, attachment_name, notices
+        )
+        attachment_deduplicated += deduplicated
         if attachment_section is not None:
             replacements[attachment_name.casefold()] = attachment_section
 
@@ -440,6 +446,7 @@ def merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
         clipped,
         tuple(rename_records),
         tuple(notices),
+        attachment_deduplicated_count=attachment_deduplicated,
     )
     return AssMergeResult(document, report)
 

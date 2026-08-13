@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
+from bdsubmerge import __version__
 from bdsubmerge.bdmv import (
     RankingContext,
     rank_playlists,
@@ -39,9 +41,12 @@ from bdsubmerge.merge import (
 from bdsubmerge.output import (
     OutputContext,
     OutputPreflightError,
+    PreflightResult,
+    ResolvedOutput,
     preflight_outputs,
     write_outputs_atomically,
 )
+from bdsubmerge.runtime_logging import record_runtime_event, record_runtime_exception
 from bdsubmerge.subtitles import (
     AssDocument,
     PgsDocument,
@@ -74,6 +79,17 @@ from .models import (
     SubtitleAsset,
 )
 from .protocols import BinaryReader, PlaylistAdapter
+from .reporting import (
+    REPORT_TARGET_ID,
+    MergeExecutionReport,
+    ReportEpisode,
+    ReportNotice,
+    ReportPlayItem,
+    ReportPlaylist,
+    ReportSourceFingerprint,
+    ReportStyleRename,
+    preflight_merge_report,
+)
 
 
 class BdmvApplicationService:
@@ -81,9 +97,19 @@ class BdmvApplicationService:
         self._playlist_adapter = playlist_adapter
 
     def scan(self, request: ScanRequest) -> ScanResult:
+        record_runtime_event(
+            "bdmv_scan_started",
+            selected_path=str(request.selected_path),
+            max_depth=request.max_depth,
+        )
         try:
             layout = resolve_bdmv_layout(request.selected_path, max_depth=request.max_depth)
         except (OSError, ValueError) as error:
+            record_runtime_exception(
+                "bdmv_scan_failed",
+                error,
+                selected_path=str(request.selected_path),
+            )
             return ScanResult(None, (), (_error("bdmv_resolution_failed", str(error)),))
         playlists = scan_playlists(layout, adapter=self._playlist_adapter)
         ranked = rank_playlists(
@@ -101,6 +127,20 @@ class BdmvApplicationService:
         for playlist in ranked:
             for message in playlist.errors:
                 issues.append(_warning("playlist_unavailable", message, str(playlist.path)))
+        record_runtime_event(
+            "bdmv_scan_completed",
+            bdmv_path=str(layout.bdmv_path),
+            index_bdmv_path=str(layout.index_bdmv_path),
+            playlists=tuple(
+                {
+                    "path": str(playlist.path),
+                    "stem": playlist.stem,
+                    "duration_90k": int(playlist.duration_90k),
+                    "available": playlist.is_available,
+                }
+                for playlist in ranked
+            ),
+        )
         return ScanResult(layout, ranked, tuple(issues))
 
     def inspect(self, request: InspectRequest) -> InspectResult:
@@ -137,6 +177,10 @@ class SubtitleApplicationService:
         self._read_bytes = read_bytes or _read_bytes
 
     def load_ordered(self, request: LoadSubtitlesRequest) -> LoadSubtitlesResult:
+        record_runtime_event(
+            "subtitle_load_started",
+            sources=tuple(str(source.path) for source in request.sources),
+        )
         if not request.sources:
             return LoadSubtitlesResult((), None, (_error("no_subtitles", "no subtitles supplied"),))
         assets: list[SubtitleAsset] = []
@@ -146,6 +190,11 @@ class SubtitleApplicationService:
                 try:
                     document = parse_sup(self._read_bytes(source.path))
                 except (OSError, ValueError) as error:
+                    record_runtime_exception(
+                        "subtitle_load_failed",
+                        error,
+                        source_path=str(source.path),
+                    )
                     issues.append(_error("subtitle_load_failed", str(error), str(source.path)))
                     continue
                 duration = estimate_sup_duration(document)
@@ -190,9 +239,19 @@ class SubtitleApplicationService:
                 )
                 analysis = analyze_text_subtitle(loaded.document)
             except UnsupportedSubtitleFormatError as error:
+                record_runtime_exception(
+                    "subtitle_load_failed",
+                    error,
+                    source_path=str(source.path),
+                )
                 issues.append(_error("unsupported_subtitle_format", str(error), str(source.path)))
                 continue
             except (OSError, ValueError) as error:
+                record_runtime_exception(
+                    "subtitle_load_failed",
+                    error,
+                    source_path=str(source.path),
+                )
                 issues.append(_error("subtitle_load_failed", str(error), str(source.path)))
                 continue
             if analysis.effective_end_ticks is None or analysis.effective_end_ticks <= 0:
@@ -229,11 +288,34 @@ class SubtitleApplicationService:
                 _error("mixed_subtitle_formats", "all subtitles in a task must use one format")
             )
         subtitle_format = next(iter(formats)) if len(formats) == 1 else None
+        record_runtime_event(
+            "subtitle_load_completed",
+            format=subtitle_format.value if subtitle_format is not None else None,
+            sources=tuple(
+                {
+                    "path": str(asset.path),
+                    "format": asset.format.value,
+                    "encoding": asset.encoding,
+                    "event_count": asset.analysis.event_count,
+                    "raw_end_90k": asset.analysis.raw_end_ticks,
+                    "effective_end_90k": asset.analysis.effective_end_ticks,
+                }
+                for asset in assets
+            ),
+            issue_codes=tuple(issue.code for issue in issues),
+        )
         return LoadSubtitlesResult(tuple(assets), subtitle_format, tuple(issues))
 
 
 class MergeApplicationService:
     def prepare(self, request: PrepareMergeRequest) -> PreparedMerge:
+        record_runtime_event(
+            "merge_prepare_started",
+            bdmv_path=str(request.layout.bdmv_path),
+            playlist_path=str(request.playlist.path),
+            playlist_stem=request.playlist.stem,
+            subtitle_paths=tuple(str(asset.path) for asset in request.subtitles.assets),
+        )
         issues: list[ApplicationIssue] = []
         if request.require_existing_sources:
             issues.extend(_source_existence_issues(request))
@@ -286,6 +368,11 @@ class MergeApplicationService:
                 config=request.mapping_config,
             )
         except (MappingError, ValueError) as error:
+            record_runtime_exception(
+                "merge_mapping_failed",
+                error,
+                playlist_path=str(request.playlist.path),
+            )
             return PreparedMerge(
                 None, None, None, None, (_error("mapping_failed", str(error)),)
             )
@@ -303,6 +390,15 @@ class MergeApplicationService:
             context,
             require_existing_sources=request.require_existing_sources,
         )
+        if request.report_target is not None and any(
+            target.target_id == REPORT_TARGET_ID for target in request.output_targets
+        ):
+            issues.append(
+                _error(
+                    "reserved_report_target_id",
+                    f"output target id {REPORT_TARGET_ID!r} is reserved for merge reports",
+                )
+            )
         for issue in output_preflight.issues:
             severity = (
                 ApplicationSeverity.ERROR
@@ -318,6 +414,11 @@ class MergeApplicationService:
         try:
             payload, report = _merge_payload(request, mapping)
         except (MergeConflictError, PgsTimestampOverflowError, TypeError, ValueError) as error:
+            record_runtime_exception(
+                "merge_payload_failed",
+                error,
+                playlist_path=str(request.playlist.path),
+            )
             issues.append(_error("merge_preflight_failed", str(error)))
             payload = None
             report = None
@@ -338,7 +439,85 @@ class MergeApplicationService:
                         notice.source_label,
                     )
                 )
-        return PreparedMerge(mapping, output_preflight, report, payload, tuple(issues))
+        execution_report: MergeExecutionReport | None = None
+        report_preflight: PreflightResult | None = None
+        report_payload: str | None = None
+        if report is not None and request.report_target is not None:
+            report_preflight = preflight_merge_report(
+                request.report_target,
+                bdmv_path=request.layout.bdmv_path,
+                source_paths=(
+                    request.layout.index_bdmv_path,
+                    request.playlist.path,
+                    *(asset.path for asset in request.subtitles.assets),
+                ),
+                subtitle_outputs=output_preflight.outputs,
+            )
+            issues.extend(_preflight_application_issues(report_preflight, "report"))
+            if report_preflight.outputs:
+                execution_report = _execution_report(
+                    request,
+                    mapping,
+                    report,
+                    output_preflight.outputs,
+                    report_preflight.outputs[0].path,
+                    tuple(issues),
+                )
+                report_payload = execution_report.serialize(
+                    request.report_target.report_format
+                )
+        record_runtime_event(
+            "merge_prepared",
+            playlist_path=str(request.playlist.path),
+            mappings=tuple(
+                {
+                    "episode_id": item.episode_id,
+                    "subtitle_path": item.subtitle_ref,
+                    "start_90k": int(item.start_boundary.time_90k),
+                    "end_90k": int(item.end_boundary.time_90k),
+                    "manual_adjustment_90k": int(item.manual_offset_90k),
+                    "final_offset_90k": int(item.final_offset_90k),
+                    "confidence": item.confidence.value,
+                }
+                for item in mapping.mappings
+            ),
+            output_paths=tuple(str(item.path) for item in output_preflight.outputs),
+            report_path=(
+                str(report_preflight.outputs[0].path)
+                if report_preflight is not None and report_preflight.outputs
+                else None
+            ),
+            style_renames=tuple(
+                {
+                    "source": item.source_label,
+                    "old_name": item.old_name,
+                    "new_name": item.new_name,
+                }
+                for item in report.style_renames
+            )
+            if report is not None
+            else (),
+            attachment_deduplicated_count=(
+                report.attachment_deduplicated_count if report is not None else 0
+            ),
+            out_of_bounds_event_count=(
+                _out_of_bounds_count(report) if report is not None else 0
+            ),
+            conflict_codes=tuple(
+                item.code for item in output_preflight.issues if "destination" in item.code
+            ),
+            issue_codes=tuple(issue.code for issue in issues),
+        )
+        return PreparedMerge(
+            mapping,
+            output_preflight,
+            report,
+            payload,
+            tuple(issues),
+            execution_report,
+            report_preflight,
+            report_payload,
+        )
 
     def execute(self, request: ExecuteMergeRequest) -> ExecuteMergeResult:
         prepared = request.prepared
@@ -357,15 +536,35 @@ class MergeApplicationService:
             output.target_id: prepared.payload
             for output in prepared.output_preflight.outputs
         }
+        combined_preflight = prepared.output_preflight
+        if prepared.report_preflight is not None:
+            assert prepared.report_payload is not None
+            combined_preflight = PreflightResult(
+                (*prepared.output_preflight.outputs, *prepared.report_preflight.outputs),
+                (*prepared.output_preflight.issues, *prepared.report_preflight.issues),
+            )
+            payloads[REPORT_TARGET_ID] = prepared.report_payload
         try:
-            receipt = write_outputs_atomically(prepared.output_preflight, payloads)
+            receipt = write_outputs_atomically(combined_preflight, payloads)
         except (OSError, OutputPreflightError) as error:
+            record_runtime_exception(
+                "merge_write_failed",
+                error,
+                output_paths=tuple(
+                    str(output.path) for output in combined_preflight.outputs
+                ),
+            )
             return ExecuteMergeResult(
                 prepared,
                 False,
                 None,
                 (_error("output_write_failed", str(error)),),
             )
+        record_runtime_event(
+            "merge_write_completed",
+            output_paths=tuple(str(path) for path in receipt.paths),
+            backup_paths=tuple(str(path) for path in receipt.backups),
+        )
         return ExecuteMergeResult(prepared, False, receipt)
 
 
@@ -566,6 +765,154 @@ def _source_existence_issues(request: PrepareMergeRequest) -> tuple[ApplicationI
         for exists, code, path in checks
         if not exists
     )
+
+
+def _preflight_application_issues(
+    preflight: PreflightResult,
+    prefix: str,
+) -> tuple[ApplicationIssue, ...]:
+    return tuple(
+        ApplicationIssue(
+            ApplicationSeverity.ERROR
+            if issue.severity.value == "error"
+            else ApplicationSeverity.WARNING
+            if issue.severity.value == "warning"
+            else ApplicationSeverity.INFO,
+            f"{prefix}_{issue.code}",
+            issue.message,
+            issue.target_id,
+        )
+        for issue in preflight.issues
+    )
+
+
+def _execution_report(
+    request: PrepareMergeRequest,
+    mapping: MappingResult,
+    merge_report: MergeReport,
+    outputs: tuple[ResolvedOutput, ...],
+    report_path: Path,
+    issues: tuple[ApplicationIssue, ...],
+) -> MergeExecutionReport:
+    episodes = tuple(
+        ReportEpisode(
+            episode_id=mapped.episode_id,
+            subtitle_path=str(asset.path),
+            start_90k=int(mapped.start_boundary.time_90k),
+            end_90k=int(mapped.end_boundary.time_90k),
+            manual_adjustment_90k=int(mapped.manual_offset_90k),
+            final_offset_90k=int(mapped.final_offset_90k),
+            raw_end_90k=asset.analysis.raw_end_ticks,
+            effective_end_90k=_required_effective_end(asset, index),
+            event_count=asset.analysis.event_count,
+            confidence=mapped.confidence.value,
+            locked=mapped.locked,
+            warnings=mapped.warnings,
+        )
+        for index, (asset, mapped) in enumerate(
+            zip(request.subtitles.assets, mapping.mappings, strict=True)
+        )
+    )
+    merge_warnings = tuple(
+        ReportNotice(item.severity, item.code, item.message, item.source_label)
+        for item in merge_report.notices
+        if item.severity != "info"
+    )
+    application_warnings = tuple(
+        ReportNotice(item.severity.value, item.code, item.message, item.source)
+        for item in issues
+        if item.severity is ApplicationSeverity.WARNING
+        and not item.code.startswith("merge_")
+    )
+    return MergeExecutionReport(
+        schema_version=1,
+        generated_at_utc=datetime.now(UTC).isoformat(),
+        application_version=__version__,
+        playlist=ReportPlaylist(
+            request.playlist.stem,
+            str(request.playlist.path),
+            int(request.playlist.duration_90k),
+            request.playlist.timeline_fingerprint,
+        ),
+        play_items=tuple(
+            ReportPlayItem(
+                item.index,
+                item.clip_id,
+                item.codec_id,
+                item.in_time_45k,
+                item.out_time_45k,
+                int(item.logical_start_90k),
+                int(item.logical_end_90k),
+                item.connection_condition,
+                item.selected_angle,
+            )
+            for item in request.playlist.play_items
+        ),
+        episodes=episodes,
+        output_paths=tuple(str(output.path) for output in outputs),
+        report_path=str(report_path),
+        input_event_count=merge_report.input_event_count,
+        output_event_count=merge_report.output_event_count,
+        dropped_event_count=merge_report.dropped_event_count,
+        clipped_event_count=merge_report.clipped_event_count,
+        attachment_deduplicated_count=merge_report.attachment_deduplicated_count,
+        out_of_bounds_event_count=_out_of_bounds_count(merge_report),
+        conflict_count=_conflict_count(merge_report, issues),
+        style_renames=tuple(
+            ReportStyleRename(item.source_label, item.old_name, item.new_name)
+            for item in merge_report.style_renames
+        ),
+        warnings=(*merge_warnings, *application_warnings),
+        source_fingerprints=(
+            _source_fingerprint("index_bdmv", "index_bdmv", request.layout.index_bdmv_path),
+            _source_fingerprint("playlist", request.playlist.stem, request.playlist.path),
+            *(
+                _source_fingerprint("subtitle", f"episode-{index + 1}", asset.path)
+                for index, asset in enumerate(request.subtitles.assets)
+            ),
+        ),
+    )
+
+
+def _source_fingerprint(role: str, source_id: str, path: Path) -> ReportSourceFingerprint:
+    try:
+        stat = path.stat()
+    except OSError:
+        return ReportSourceFingerprint(role, source_id, str(path), None, None)
+    return ReportSourceFingerprint(role, source_id, str(path), stat.st_size, stat.st_mtime_ns)
+
+
+def _out_of_bounds_count(report: MergeReport) -> int:
+    codes = {
+        "event_dropped_before_zero",
+        "event_start_clipped",
+        "event_starts_after_playlist",
+        "event_ends_after_playlist",
+        "cue_dropped_before_zero",
+        "cue_start_clipped",
+        "cue_outside_playlist",
+    }
+    return sum(item.code in codes for item in report.notices)
+
+
+def _conflict_count(
+    report: MergeReport,
+    issues: tuple[ApplicationIssue, ...],
+) -> int:
+    merge_conflicts = sum("conflict" in item.code for item in report.notices)
+    output_conflicts = sum(
+        item.code
+        in {
+            "output_destination_exists",
+            "output_destination_overwrite",
+            "output_outputs_overlap",
+            "report_destination_exists",
+            "report_destination_overwrite",
+            "report_overwrites_input",
+        }
+        for item in issues
+    )
+    return merge_conflicts + output_conflicts
 
 
 def _read_bytes(path: Path) -> bytes:
