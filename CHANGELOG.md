@@ -1,9 +1,10 @@
 # Changelog
 
-All notable development changes are recorded here. BDSubMerge has not reached a stable 1.0
-release; entries under **Unreleased** describe the current pre-alpha source tree.
+All notable changes to BDSubMerge are recorded here.
 
 ## Unreleased
+
+## 1.0.0 - 2026-08-13
 
 ### Added
 
@@ -19,14 +20,20 @@ release; entries under **Unreleased** describe the current pre-alpha source tree
   application-state conversion, and atomic project saves.
 - Shared application services, CLI commands, Qt GUI shell, translations, GitHub CI, Windows
   onedir packaging, and automated acceptance coverage.
+- Atomic project restore with per-source relocation, changed-input confirmation, complete
+  playlist identity checks, and deterministic mapping/output policy replay.
+- Runtime logs, optional text/JSON merge reports, cooperative cancellation, and bilingual
+  packaged-UI evidence.
 
 ### Changed
 
-- README status now reflects M5 feature completion in source while CI integration remains in
-  progress. No stable release claim is made.
+- Windows release archives include the version in the filename and must pass exact version,
+  SHA-256, license, no-Python startup, and packaged-UI screenshot gates.
+- CLI and GUI warning confirmation now share the same application-service severity gate.
 
 ### Known Limitations
 
-- Real-world MPLS and SUP fixture breadth still requires expansion and verification.
-- Writing to a live UNC/SMB share still requires environment-level verification.
-- The Qt GUI and Windows artifact remain development builds until explicitly released.
+- Real-world MPLS and SUP fixture breadth is limited to licensed, anonymous, or synthetic data
+  and should continue to expand.
+- User-provided UNC/SMB shares remain subject to their own permissions and availability even
+  though CI verifies scanning, preflight, and atomic writes on a real temporary Windows share.

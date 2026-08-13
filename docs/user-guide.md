@@ -1,7 +1,7 @@
 # BDSubMerge User Guide
 
-This guide describes the implemented pre-alpha workflow. The GUI is still under integration;
-the CLI examples expose the same application services and are suitable for repeatable checks.
+This guide describes the BDSubMerge 1.0 workflow. The GUI and CLI use the same application
+services; CLI examples remain suitable for repeatable and automated checks.
 
 ## 1. Inputs and Scanning
 
@@ -185,16 +185,18 @@ Exit codes:
 
 ## 9. Windows Artifact
 
-The **Package Windows** GitHub workflow produces `BDSubMerge-windows-x64.zip` and its SHA-256
-file in the `BDSubMerge-windows-x64` artifact. Verify the checksum, extract the complete onedir
-package, and keep `_internal`, `LICENSE`, `LICENSES`, and `THIRD_PARTY_NOTICES.md` beside the
-executable. The workflow smoke-tests the final ZIP from a Chinese and space-containing path
-with Python environment variables removed before upload.
+The **Package Windows** GitHub workflow produces
+`BDSubMerge-<version>-windows-x64.zip` and its SHA-256 file in the
+`BDSubMerge-windows-x64` artifact. Verify the checksum, extract the complete onedir package,
+and keep `_internal`, `LICENSE`, `LICENSES`, and `THIRD_PARTY_NOTICES.md` beside the executable.
+The workflow smoke-tests the final ZIP from a Chinese and space-containing path with Python
+environment variables removed. It also verifies the embedded version and captures distinct
+Chinese/light and English/dark screenshots from the packaged executable.
 
-The artifact is a development build until a release is explicitly published. Windows CI creates
-an isolated temporary SMB share and verifies real UNC scan, preflight, and atomic output there;
-commercial-disc fixture breadth and a clean Windows 10/11 desktop remain separate validation
-concerns.
+An Actions artifact is a release candidate until the corresponding GitHub Release is published.
+Windows CI creates an isolated temporary SMB share and verifies real UNC scan, preflight, and
+atomic output there; commercial-disc fixture breadth and end-user Windows configurations remain
+separate validation concerns.
 
 ## 10. Safety and Development Policy
 
@@ -202,7 +204,8 @@ concerns.
 - Never silently overwrite output; display and preflight the full destination.
 - Do not log subtitle body text unless explicit debugging is added by the user.
 - No telemetry, network upload, online subtitle download, or automatic update is present.
-- Repository contributors must not build, test, lint, type-check, install dependencies, or
-  package locally. Push changes and use GitHub Actions for validation.
+- Local Python commands must explicitly use `py -3.12`. Python dependencies, tests, lint,
+  type checks, builds, and packaging may run locally; validation that requires a new non-Python
+  environment must run in GitHub Actions. Audit each pushed candidate by exact commit SHA.
 
 Known validation gaps are real-world MPLS/SUP fixture breadth and a clean Windows 10/11 desktop.

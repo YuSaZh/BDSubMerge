@@ -264,3 +264,16 @@
 | 目标是什么？ | 交付 GitHub 远程验证通过的 BDSubMerge 1.0 |
 | 我学到了什么？ | 见 findings.md |
 | 我做了什么？ | 见上方记录 |
+
+### 阶段 6 恢复与仓库规则核对（2026-08-13）
+- **状态：** in_progress
+- 根目录 `AGENTS.md` 已随 `e404ede` 推送，仓库通用规则明确固定 `py -3.12`、允许缺失 Python 包安装和本地 Python 验证、非 Python 新环境交给 GitHub Actions，并禁止浏览器登录 GitHub。
+- `main`、`origin/main` 与工作树核对无差异；当前 HEAD 为 `e5abdf4cbd857d93c94c3df85c63b13ab66006eb`。
+- 精确 SHA run `31694994062` 已全部成功：source distribution、Ubuntu/Windows Ruff/Mypy/Pytest、Windows 真实 UNC 建立与清理、Ubuntu 四态截图矩阵和 artifacts 上传均通过。
+- 发布状态组合查询中的旧 `gh` API token 曾返回 401；用户随后通过 GitHub CLI 官方设备流程完成本机 keyring 登录。Hanam 本机用户上下文已验证完整申请 scopes、仓库 admin/maintain/push、Actions API 和 Release API，Git 协议仍为 SSH，当前 Release 列表为空。
+- 已统一 `1.0.0` 版本元数据并更新双语 README、用户指南和 Changelog；Windows 工作流新增带版本号 ZIP、最终 EXE 版本校验和中英文包内截图 artifact。首轮 Ruff 通过，5 项局部测试全部通过但被全局 coverage 门槛判为命令失败；Mypy 唯一诊断为 Qt 图片格式参数类型，已针对性修正。
+- 第二轮 Ruff 和 Mypy 均通过；局部测试暴露 PySide6 图片格式参数的类型桩/运行时差异，改由 `.png` 扩展名推断格式。工作流 YAML 静态解析还缺本地 `PyYAML`，将作为审计工具安装，不改变发布依赖。
+- 完整本机测试收集 324 项，322 通过，coverage 84.66%；两项失败均为 AC-02 的 CI 专用 Windows SMB/UNC 条件，本机无临时共享。隔离 build 仅停在安装 Hatchling，改用已安装的 Hatchling 1.32.0 无隔离构建；远程仍需完整闭环这两条环境证据。
+- 本机 PyInstaller 6.22.0 onedir 与无 Python `1.0.0` 烟测通过。首次 `offscreen` 最终 EXE 截图虽为 1440x1000 但中英文均缺字；原生 Windows 平台 A/B 截图字体正常，并发现英文界面 waiting 占位未刷新。已针对性修正工作流平台和占位翻译，等待重新验证。
+- 最终本机闭环完成：323 passed、2 deselected、coverage 84.64%，Ruff/Mypy strict/YAML/diff 均通过；`bdsubmerge-1.0.0` sdist/wheel 的版本和双语资源已核对；PyInstaller 6.22.0 onedir、清空 Python 环境后的 `--expect-version 1.0.0` 烟测通过。
+- 最终 EXE 原生 Windows 截图为中文浅色 `2160x1500` / SHA256 `90866d9ae73c17a5eeab63fd3c85533d12800828fcfa60565ad354a4093a71f3`，英文深色 `2160x1500` / SHA256 `eaa7225ad9bd7786d9c4b7848c37392b385434bea34f1af9cc5ba4fc1bca56e7`；人工审查字体、翻译、主题和布局正常，无重叠或截断。

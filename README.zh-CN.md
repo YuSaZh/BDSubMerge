@@ -4,8 +4,9 @@ BDSubMerge 是一款 Windows 优先的 BDMV 原盘字幕合并工具。它只读
 将按集排列的 ASS、SSA、SRT 或 Blu-ray PGS SUP 字幕映射到 MPLS 播放时间线，并通过
 预检和事务写入生成外挂字幕。
 
-> 当前状态：Pre-alpha。M0-M5 的功能代码已完成，目前正由 GitHub Actions 进行集成
-> 验证。这不是 1.0 正式版。
+> 当前状态：1.0.0 发布候选。源码工作流已经完成；同一候选提交必须同时通过 CI、
+> Windows 打包、哈希、许可证、无 Python 启动和最终包界面证据，之后才发布
+> `v1.0.0`。
 
 ## 已实现能力
 
@@ -16,13 +17,14 @@ BDSubMerge 是一款 Windows 优先的 BDMV 原盘字幕合并工具。它只读
 - 支持自动分集映射、锁定映射、手动微调和用户边界；
 - 所有输出先整体预检，多目标写入使用事务提交；
 - 保存带源文件指纹和版本号的 `.bdsm.json` 项目；
-- CLI 与正在集成的 Qt GUI 共用同一套应用服务。
+- CLI 与 Qt GUI 共用同一套应用服务。
 
 ## 快速开始
 
-普通试用应使用 GitHub Actions 生成的 Windows artifact。在仓库 **Actions** 页面打开
-成功的 **Package Windows** 运行，下载 `BDSubMerge-windows-x64`，完整解压后运行
-`BDSubMerge.exe`。不要移动或删除同目录中的 `_internal` 文件夹。
+普通试用应使用 Windows artifact。在 GitHub Release 发布前，可在仓库 **Actions** 页面
+打开成功的 **Package Windows** 运行，下载 `BDSubMerge-windows-x64`，校验 SHA-256，
+完整解压带版本号的 `BDSubMerge-<version>-windows-x64.zip` 后运行 `BDSubMerge.exe`。
+不要移动或删除同目录中的 `_internal` 文件夹。
 
 已安装环境中的 CLI 示例：
 
@@ -49,15 +51,16 @@ bdsubmerge merge "D:\Projects\Title.bdsm.json" --json
 
 ## 当前限制
 
-- 仍需增加并验证更多真实 MPLS 与 SUP 样本；
-- 真实 UNC/SMB 共享写入仍需在实际环境验证；Windows 路径解析和无网络预检已有覆盖；
-- Qt GUI 尚处于集成阶段，当前不承诺稳定的 1.0 图形工作流；
+- 受许可证和隐私边界限制，真实 MPLS 与 SUP fixture 的广度仍需持续扩展；
+- GitHub Actions 已在临时 Windows SMB/UNC 共享上验证扫描、预检和原子写入；用户实际
+  共享仍受其权限和可用性影响；
 - 文件移动后的项目必须先重定位并刷新指纹，才能继续合并。
 
 ## 开发与验证
 
-目标环境为 Python 3.12。仓库规则禁止在本机执行构建、测试、lint、类型检查、依赖
-安装和打包；全部验证与 Windows 打包只通过 GitHub Actions 完成。架构见
+目标环境为 Python 3.12。本机 Python 命令必须显式使用 `py -3.12`；允许安装 Python
+依赖并执行测试、lint、类型检查、构建和打包。需要新增非 Python 环境的验证交给
+GitHub Actions；每次推送都按精确提交 SHA 审计。架构见
 [docs/architecture.md](docs/architecture.md)，时间基准见
 [docs/adr/0001-media-timebase.md](docs/adr/0001-media-timebase.md)，变更记录见
 [CHANGELOG.md](CHANGELOG.md)。

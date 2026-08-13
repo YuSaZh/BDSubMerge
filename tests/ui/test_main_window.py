@@ -389,7 +389,20 @@ def test_window_defaults_to_chinese_and_switches_to_english(
     window.set_language("en_US")
 
     assert window.path_label.text() == "Blu-ray path"
+    assert window.preflight_summary.toPlainText() == "Not yet checked"
     assert window.settings.value("ui/language") == "en_US"
+
+
+def test_language_switch_preserves_a_real_preflight_summary(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    window.preflight_summary.setPlainText("output: D:/Title/index.ass")
+
+    window.set_language("en_US")
+
+    assert window.preflight_summary.toPlainText() == "output: D:/Title/index.ass"
 
 
 def test_scan_result_populates_playlist_and_exact_jriver_path(

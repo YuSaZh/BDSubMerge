@@ -1,7 +1,7 @@
 # BDSubMerge 用户指南
 
-本文描述当前已实现的 pre-alpha 工作流。GUI 仍在集成中；CLI 调用相同的应用服务，
-适合进行可复现检查。
+本文描述 BDSubMerge 1.0 工作流。GUI 与 CLI 调用相同的应用服务；CLI 适合进行可复现
+和自动化检查。
 
 ## 1. 输入与扫描
 
@@ -173,13 +173,14 @@ JSON 顶层格式固定为：
 ## 9. Windows Artifact
 
 GitHub 的 **Package Windows** workflow 在 `BDSubMerge-windows-x64` artifact 中生成
-`BDSubMerge-windows-x64.zip` 和对应 SHA-256 文件。校验哈希后完整解压 onedir 包，并保持
-`_internal`、`LICENSE`、`LICENSES` 和 `THIRD_PARTY_NOTICES.md` 与程序目录结构不变。
-workflow 会清除 Python 环境变量，从含中文和空格的路径启动最终 ZIP 中的程序进行烟测。
+`BDSubMerge-<version>-windows-x64.zip` 和对应 SHA-256 文件。校验哈希后完整解压
+onedir 包，并保持 `_internal`、`LICENSE`、`LICENSES` 和 `THIRD_PARTY_NOTICES.md` 与程序
+目录结构不变。workflow 会清除 Python 环境变量，从含中文和空格的路径启动最终 ZIP
+进行烟测，还会校验内嵌版本，并由最终 EXE 生成中文浅色和英文深色截图证据。
 
-在明确发布 release 前，该 artifact 仍是开发构建。Windows CI 会创建隔离的临时 SMB
-共享，并在真实 UNC 路径上验证扫描、预检和原子写入；商业原盘夹具广度和干净的
-Windows 10/11 桌面仍属于独立验证项。
+对应 GitHub Release 发布前，Actions artifact 属于发布候选。Windows CI 会创建隔离的
+临时 SMB 共享，并在真实 UNC 路径上验证扫描、预检和原子写入；商业原盘夹具广度和
+最终用户的 Windows 配置仍属于独立验证项。
 
 ## 10. 安全与开发规则
 
@@ -187,7 +188,8 @@ Windows 10/11 桌面仍属于独立验证项。
 - 不静默覆盖，写入前必须显示并预检完整目标；
 - 除非用户主动启用未来的调试功能，否则不记录字幕正文；
 - 不包含遥测、网络上传、在线字幕下载或自动更新；
-- 仓库贡献者禁止本机构建、测试、lint、类型检查、安装依赖或打包，必须推送后使用
-  GitHub Actions 验证。
+- 本机 Python 命令必须显式使用 `py -3.12`；允许安装 Python 依赖并执行测试、lint、
+  类型检查、构建和打包。需要新增非 Python 环境的验证必须在 GitHub Actions 执行；
+  每个推送候选都要按精确提交 SHA 审计。
 
 当前真实验证缺口是实际 MPLS/SUP fixture 覆盖广度和干净的 Windows 10/11 桌面。

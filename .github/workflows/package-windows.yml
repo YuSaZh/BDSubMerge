@@ -18,33 +18,34 @@ jobs:
           python-version: "3.12"
           architecture: x64
           cache: pip
-      - name: Verify release tag and architecture
-        if: github.ref_type == 'tag'
+      - name: Resolve project version and architecture
         shell: pwsh
-        env:
-          TAG_NAME: ${{ github.ref_name }}
         run: |
           if (-not [Environment]::Is64BitProcess) {
             throw 'The Windows package must be built by a 64-bit Python process'
-          }
-          $semver = '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$'
-          if ($env:TAG_NAME -cnotmatch $semver) {
-            throw "Release tag is not SemVer: $env:TAG_NAME"
           }
           $projectVersion = python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])"
           if ($LASTEXITCODE -ne 0) {
             throw 'Unable to read the project version from pyproject.toml'
           }
           $projectVersion = "$projectVersion".Trim()
-          if ($env:TAG_NAME.Substring(1) -cne $projectVersion) {
-            throw "Release tag $env:TAG_NAME does not match project version $projectVersion"
+          if ($projectVersion -cnotmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw "Stable package version is not SemVer core: $projectVersion"
           }
-      - name: Verify manual build architecture
-        if: github.ref_type != 'tag'
+          "BDSUBMERGE_VERSION=$projectVersion" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify release tag and architecture
+        if: github.ref_type == 'tag'
         shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          if (-not [Environment]::Is64BitProcess) {
-            throw 'The Windows package must be built by a 64-bit Python process'
+          $semver = '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$'
+          if ($env:TAG_NAME -cnotmatch $semver) {
+            throw "Release tag is not SemVer: $env:TAG_NAME"
+          }
+          if ($env:TAG_NAME.Substring(1) -cne $env:BDSUBMERGE_VERSION) {
+            throw "Release tag $env:TAG_NAME does not match project version $env:BDSUBMERGE_VERSION"
           }
       - name: Install project
         run: >-
@@ -176,7 +177,7 @@ jobs:
       - name: Create ZIP and SHA256
         shell: pwsh
         run: |
-          $zipName = 'BDSubMerge-windows-x64.zip'
+          $zipName = "BDSubMerge-$env:BDSUBMERGE_VERSION-windows-x64.zip"
           $zipPath = Join-Path dist $zipName
           Push-Location dist
           try {
@@ -195,7 +196,8 @@ jobs:
           $smokeRoot = Join-Path $env:RUNNER_TEMP 'BDSubMerge 最终包 无 Python'
           $workingDirectory = Join-Path $smokeRoot '运行工作目录'
           New-Item -ItemType Directory -Force -Path $smokeRoot,$workingDirectory | Out-Null
-          Expand-Archive -LiteralPath dist/BDSubMerge-windows-x64.zip `
+          $zipPath = "dist/BDSubMerge-$env:BDSUBMERGE_VERSION-windows-x64.zip"
+          Expand-Archive -LiteralPath $zipPath `
             -DestinationPath $smokeRoot
           $executable = Join-Path $smokeRoot 'BDSubMerge/BDSubMerge.exe'
           if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
@@ -208,16 +210,65 @@ jobs:
           $env:CONDA_PREFIX = $null
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           $process = Start-Process -FilePath $executable `
-            -ArgumentList '--smoke-test' `
+            -ArgumentList '--smoke-test', '--expect-version', $env:BDSUBMERGE_VERSION `
             -WorkingDirectory $workingDirectory `
             -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) {
             throw "Packaged GUI and adapter smoke test failed with exit code $($process.ExitCode)"
           }
+      - name: Capture final executable visual evidence
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: windows
+        run: |
+          $executable = Join-Path $env:RUNNER_TEMP `
+            'BDSubMerge 最终包 无 Python/BDSubMerge/BDSubMerge.exe'
+          $workingDirectory = Join-Path $env:RUNNER_TEMP `
+            'BDSubMerge 最终包 无 Python/运行工作目录'
+          $evidenceRoot = Join-Path $env:GITHUB_WORKSPACE 'reports/package-ui'
+          New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+          $captures = @(
+            @('zh_CN', 'light', (Join-Path $evidenceRoot 'BDSubMerge-zh-light.png')),
+            @('en_US', 'dark', (Join-Path $evidenceRoot 'BDSubMerge-en-dark.png'))
+          )
+          foreach ($capture in $captures) {
+            $destination = $capture[2]
+            $quotedDestination = '"' + $destination + '"'
+            $process = Start-Process -FilePath $executable `
+              -ArgumentList '--capture-screenshot', $quotedDestination, `
+                '--locale', $capture[0], '--theme', $capture[1], `
+                '--expect-version', $env:BDSUBMERGE_VERSION `
+              -WorkingDirectory $workingDirectory `
+              -WindowStyle Hidden -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              throw "Packaged GUI screenshot failed with exit code $($process.ExitCode)"
+            }
+            if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
+              throw "Packaged GUI screenshot is missing: $destination"
+            }
+            if ((Get-Item -LiteralPath $destination).Length -lt 30000) {
+              throw "Packaged GUI screenshot lacks expected rendered detail: $destination"
+            }
+            Add-Type -AssemblyName System.Drawing
+            $image = [System.Drawing.Image]::FromFile($destination)
+            try {
+              if ($image.Width -lt 1200 -or $image.Height -lt 800) {
+                throw "Packaged GUI screenshot is too small: $($image.Width)x$($image.Height)"
+              }
+            } finally {
+              $image.Dispose()
+            }
+          }
+          $hashes = $captures | ForEach-Object {
+            (Get-FileHash -LiteralPath $_[2] -Algorithm SHA256).Hash
+          }
+          if (($hashes | Select-Object -Unique).Count -ne $captures.Count) {
+            throw 'Packaged GUI screenshots are not visually distinct'
+          }
       - name: Verify release checksum
         shell: pwsh
         run: |
-          $zipPath = 'dist/BDSubMerge-windows-x64.zip'
+          $zipPath = "dist/BDSubMerge-$env:BDSUBMERGE_VERSION-windows-x64.zip"
           $checksumPath = "$zipPath.sha256"
           $expected = ((Get-Content -LiteralPath $checksumPath -Raw) -split '\s+')[0]
           $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
@@ -228,10 +279,17 @@ jobs:
         with:
           name: BDSubMerge-windows-x64
           path: |
-            dist/BDSubMerge-windows-x64.zip
-            dist/BDSubMerge-windows-x64.zip.sha256
+            dist/BDSubMerge-*-windows-x64.zip
+            dist/BDSubMerge-*-windows-x64.zip.sha256
           if-no-files-found: error
           compression-level: 0
+      - uses: actions/upload-artifact@v7
+        with:
+          name: BDSubMerge-windows-x64-visual-evidence
+          path: |
+            reports/package-ui/BDSubMerge-zh-light.png
+            reports/package-ui/BDSubMerge-en-dark.png
+          if-no-files-found: error
 
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
@@ -247,7 +305,7 @@ jobs:
           path: release-files
       - name: Verify downloaded release files
         working-directory: release-files
-        run: sha256sum --check BDSubMerge-windows-x64.zip.sha256
+        run: sha256sum --check BDSubMerge-*-windows-x64.zip.sha256
       - name: Require successful CI for the release commit
         shell: bash
         env:
@@ -279,5 +337,5 @@ jobs:
           fi
           gh release create "$GITHUB_REF_NAME" \
             "${release_flags[@]}" \
-            release-files/BDSubMerge-windows-x64.zip \
-            release-files/BDSubMerge-windows-x64.zip.sha256
+            release-files/BDSubMerge-*-windows-x64.zip \
+            release-files/BDSubMerge-*-windows-x64.zip.sha256

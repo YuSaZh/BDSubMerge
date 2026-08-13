@@ -3458,9 +3458,15 @@ class MainWindow(QMainWindow):
         )
 
     def set_language(self, locale: str) -> None:
+        previous_waiting = self.translations.text("preflight.waiting")
+        previous_summary = self.preflight_summary.toPlainText()
         self.translations.set_locale(locale)
         self.settings.setValue("ui/language", locale)
         self.retranslate_ui()
+        if not previous_summary or previous_summary == previous_waiting:
+            self.preflight_summary.setPlainText(
+                self.translations.text("preflight.waiting")
+            )
 
     def set_theme(self, mode: ThemeMode) -> None:
         application = QApplication.instance()

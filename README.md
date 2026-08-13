@@ -5,8 +5,9 @@ MPLS timeline. It reads BDMV metadata without modifying the disc, maps ASS/SSA/S
 Blu-ray PGS SUP sources to playlist intervals, and writes external subtitles through
 preflighted, transactional output targets.
 
-> Status: pre-alpha. Milestones M0-M5 are feature-complete in source, and the current
-> integration is being verified by GitHub Actions. This is not a 1.0 release.
+> Status: 1.0.0 release candidate. The source workflow is complete; the final candidate must
+> pass CI, Windows packaging, checksum, license, no-Python startup, and packaged-UI evidence
+> on the same commit before the `v1.0.0` release is published.
 
 ## What It Does
 
@@ -18,14 +19,15 @@ preflighted, transactional output targets.
   and user boundaries.
 - Preflights every output before writing and commits multi-target output transactionally.
 - Saves reproducible, versioned `.bdsm.json` projects with source fingerprints.
-- Provides shared application services for the CLI and developing Qt GUI.
+- Provides shared application services for the CLI and Qt GUI.
 
 ## Quick Start
 
-Use the downloadable Windows artifact for normal evaluation. From the repository's
-**Actions** page, open a successful **Package Windows** run, download
-`BDSubMerge-windows-x64`, extract the complete directory, and start `BDSubMerge.exe`.
-Keep the `_internal` directory beside the executable.
+Use the downloadable Windows artifact for normal evaluation. Before the GitHub Release is
+published, open a successful **Package Windows** run from the repository's **Actions** page
+and download `BDSubMerge-windows-x64`. Verify the SHA-256 file, extract the versioned
+`BDSubMerge-<version>-windows-x64.zip`, and start `BDSubMerge.exe`. Keep the `_internal`
+directory beside the executable.
 
 The CLI is available in an installed environment:
 
@@ -54,17 +56,19 @@ See the [Chinese README](README.zh-CN.md) and
 
 ## Current Limits
 
-- Real-world MPLS and SUP fixture coverage still needs expansion and validation.
-- Actual writes to a live UNC/SMB share still require environment-level verification;
-  Windows path resolution and preflight are covered without contacting a share.
-- The Qt GUI is under integration and does not yet represent a declared stable 1.0 workflow.
+- Real-world MPLS and SUP fixture coverage remains intentionally limited to licensed,
+  anonymous, or synthetic data and should continue to expand.
+- GitHub Actions validates scanning, preflight, and atomic writes on a temporary real Windows
+  SMB/UNC share; behavior still depends on the permissions and availability of each user's
+  own share.
 - A project whose files moved must be relocated and fingerprinted again before merge.
 
 ## Development
 
-The target is Python 3.12. Repository policy forbids local builds, tests, linters, type
-checks, dependency installation, and packaging. CI, tests, and Windows packaging run only in
-GitHub Actions. See [architecture](docs/architecture.md),
+The target is Python 3.12. Local Python work must explicitly use `py -3.12`; Python dependency
+installation, tests, linters, type checks, builds, and packaging are allowed. Validation that
+requires provisioning a new non-Python environment belongs in GitHub Actions. Every pushed
+candidate is audited against its exact commit SHA. See [architecture](docs/architecture.md),
 [timebase ADR](docs/adr/0001-media-timebase.md), and [changelog](CHANGELOG.md).
 
 ## License
