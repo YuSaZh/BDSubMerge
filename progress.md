@@ -42,6 +42,8 @@
 | 31630779273 | Ubuntu、Windows | 相同 16 项 Ruff 诊断，后续步骤跳过 | fail |
 | 31659484298 | Source distribution | 构建及双语 wheel 资源检查成功 | pass |
 | 31659484298 | Ubuntu、Windows | Ruff 剩余 2 项排序诊断，后续步骤跳过 | fail |
+| 31659898600 | Source distribution、Ubuntu/Windows Ruff | 构建和 Ruff 全部通过 | pass |
+| 31659898600 | Ubuntu、Windows Mypy | 相同 6 项严格类型诊断，后续步骤跳过 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -52,6 +54,7 @@
 | 外部资料查询 | 搜索工具返回 HTTP 500 | 不重复请求；保留任务书语义，等待真实夹具契约测试 |
 | Qt 许可旧链接 | 官方义务页面旧 URL 返回 404 | 改用 Qt for Python 官方 licenses 页面与有效源码目录 |
 | Git push 超时 | 沙箱 OpenSSH 读取 `CodexSandboxOnline` 的 known_hosts | 显式使用 Hanam 本机 SSH config/known_hosts，提交 `f8c0552` 推送成功 |
+| M6 严格类型 | 两个平台在 UI/CLI 发现相同 6 项 Mypy 错误 | 按真实模型字段和 Qt/argparse 状态显式收窄，继续远程验证 |
 
 ## 五问重启检查
 | 问题 | 答案 |

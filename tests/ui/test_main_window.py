@@ -28,11 +28,13 @@ from bdsubmerge.output import (
 )
 from bdsubmerge.project import (
     FileFingerprint,
+    MappingSnapshot,
     OutputState,
     ProjectState,
     RestoredProject,
     SourceCheck,
     SourceState,
+    SubtitleState,
 )
 from bdsubmerge.subtitles import SubtitleFormat, TextSubtitleInfo, parse_ass
 from bdsubmerge.ui.main_window import MainWindow
@@ -396,6 +398,65 @@ def test_restored_mapping_locks_are_used_before_new_preflight(
     window.restored_mapping_locks = (lock,)
 
     assert window._mapping_locks() == (lock,)
+
+
+def test_project_mapping_is_restored_by_subtitle_id(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    subtitle = tmp_path / "episode.ass"
+    subtitle.write_text("subtitle", encoding="utf-8")
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    asset = SubtitleAsset(
+        subtitle,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+        "utf-8",
+    )
+    mapping = MappingSnapshot(
+        "episode-1",
+        "playlist:start",
+        "playlist:end",
+        0,
+        90_000,
+        900,
+        True,
+        "high",
+    )
+    state = ProjectState(
+        tmp_path / "BDMV",
+        tmp_path / "BDMV" / "index.bdmv",
+        tmp_path / "BDMV" / "PLAYLIST" / "00001.mpls",
+        "00001",
+        90_000,
+        (),
+        (SubtitleState("episode-1", subtitle, "ass", "utf-8", 0),),
+        (),
+        (mapping,),
+        (),
+    )
+    window.subtitle_paths = [subtitle]
+    window.pending_project = RestoredProject(state, ())
+
+    window._project_subtitles_finished(LoadSubtitlesResult((asset,), SubtitleFormat.ASS))
+
+    assert window.restored_mapping_locks == (
+        MappingLock(
+            "episode-1",
+            "playlist:start",
+            "playlist:end",
+            MediaTick90k(900),
+        ),
+    )
+    assert window.mapping_table.item(0, 4).text() == "playlist:start"
+    assert window.mapping_table.item(0, 5).text() == "playlist:end"
+    assert window.mapping_table.item(0, 7).text() == "10 ms"
 
 
 def test_user_boundaries_are_forwarded_and_invalidate_preflight(

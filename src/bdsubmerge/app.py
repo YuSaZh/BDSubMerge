@@ -24,7 +24,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     smoke_test = "--smoke-test" in arguments
     if smoke_test:
         arguments.remove("--smoke-test")
-    application = QApplication.instance() or QApplication(arguments)
+    existing_application = QApplication.instance()
+    if existing_application is None:
+        application = QApplication(arguments)
+    elif isinstance(existing_application, QApplication):
+        application = existing_application
+    else:
+        raise RuntimeError("a non-GUI Qt application already exists")
     application.setStyle("Fusion")
     window = MainWindow()
     if smoke_test:

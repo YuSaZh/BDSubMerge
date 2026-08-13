@@ -170,7 +170,9 @@ def main(
         with redirect_stderr(error_output):
             arguments = parser.parse_args(argv)
     except SystemExit as error:
-        return int(error.code)
+        if isinstance(error.code, int):
+            return error.code
+        return int(ExitCode.OK if error.code is None else ExitCode.OPERATION_FAILED)
     if arguments.command is None:
         return int(ExitCode.OK)
 

@@ -572,8 +572,8 @@ class MainWindow(QMainWindow):
             else result.playlists[0].stem if result.playlists else ""
         )
         for row in range(self.playlist_table.rowCount()):
-            item = self.playlist_table.item(row, 0)
-            if item is not None and item.text() == selected_stem:
+            selected_item = self.playlist_table.item(row, 0)
+            if selected_item is not None and selected_item.text() == selected_stem:
                 self.playlist_table.selectRow(row)
                 break
         self.settings.setValue("recent/bdmv", self.path_edit.text())
@@ -920,7 +920,7 @@ class MainWindow(QMainWindow):
         if self.pending_project is None:
             return
         state = self.pending_project.state
-        by_id = {item.id: item for item in state.mappings}
+        by_id = {item.subtitle_id: item for item in state.mappings}
         self.restored_mapping_locks = tuple(
             MappingLock(
                 item.subtitle_id,
@@ -1297,15 +1297,20 @@ class MainWindow(QMainWindow):
         ):
             self.statusBar().showMessage(self.translations.text("status.no_playlist"), 5000)
             return None
-        if self.subtitle_result is None or not self.subtitle_result.ready:
+        subtitle_result = self.subtitle_result
+        if subtitle_result is None or not subtitle_result.ready:
+            self.statusBar().showMessage(self.translations.text("status.no_subtitles"), 5000)
+            return None
+        subtitle_format = subtitle_result.format
+        if subtitle_format is None:
             self.statusBar().showMessage(self.translations.text("status.no_subtitles"), 5000)
             return None
         context = OutputContext(
-            subtitle_format=self.subtitle_result.format.value,
+            subtitle_format=subtitle_format.value,
             index_bdmv_path=self.scan_result.layout.index_bdmv_path,
             playlist_path=self.selected_playlist.path,
             disc_container_path=self.scan_result.layout.disc_container_path,
-            input_subtitle_paths=tuple(asset.path for asset in self.subtitle_result.assets),
+            input_subtitle_paths=tuple(asset.path for asset in subtitle_result.assets),
         )
         target = self._make_target(context)
         if target is None:
@@ -1313,7 +1318,7 @@ class MainWindow(QMainWindow):
         return PrepareMergeRequest(
             layout=self.scan_result.layout,
             playlist=self.selected_playlist,
-            subtitles=self.subtitle_result,
+            subtitles=subtitle_result,
             output_targets=(target,),
             output_context=context,
             locks=self._mapping_locks(),

@@ -4,20 +4,24 @@ from __future__ import annotations
 
 import traceback
 from collections.abc import Callable
+from threading import Event
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
 
 class CancellationToken:
     def __init__(self) -> None:
-        self._cancelled = False
+        self._cancelled = Event()
 
     @property
     def cancelled(self) -> bool:
-        return self._cancelled
+        return self._cancelled.is_set()
+
+    def is_cancelled(self) -> bool:
+        return self._cancelled.is_set()
 
     def cancel(self) -> None:
-        self._cancelled = True
+        self._cancelled.set()
 
 
 class TaskSignals(QObject):
@@ -44,12 +48,12 @@ class ServiceTask[ResultT](QRunnable):
     @Slot()
     def run(self) -> None:
         try:
-            if self.token.cancelled:
+            if self.token.is_cancelled():
                 self.signals.cancelled.emit()
                 return
             self.signals.progress.emit(5, "started")
             result = self.operation()
-            if self.token.cancelled:
+            if self.token.is_cancelled():
                 self.signals.cancelled.emit()
                 return
             self.signals.progress.emit(100, "complete")
