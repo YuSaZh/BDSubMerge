@@ -2037,6 +2037,7 @@ class MainWindow(QMainWindow):
                 if column == 1:
                     item.setToolTip(str(asset.path))
                 self.mapping_table.setItem(row, column, item)
+        self.mapping_table.resizeColumnToContents(1)
 
     @Slot()
     def remove_subtitles(self) -> None:
@@ -2790,6 +2791,12 @@ class MainWindow(QMainWindow):
                 combo.addItem(current_id, current_id)
             combo.setCurrentIndex(combo.findData(current_id))
             combo.setEditText(current_id)
+            popup_width = max(
+                combo.fontMetrics().horizontalAdvance(combo.itemText(index))
+                for index in range(combo.count())
+            )
+            combo.view().setTextElideMode(Qt.TextElideMode.ElideNone)
+            combo.view().setMinimumWidth(popup_width + 36)
             combo.currentIndexChanged.connect(
                 lambda _index, eid=episode_id, changed_edge=edge, widget=combo: (
                     self._mapping_boundary_combo_changed(eid, changed_edge, widget)
@@ -3052,7 +3059,7 @@ class MainWindow(QMainWindow):
                     ),
                 )
             )
-        lines.extend(self._format_issue(issue) for issue in prepared.issues)
+        lines.extend(self._grouped_issue_lines(prepared.issues))
         if prepared.ready:
             lines.insert(0, self.translations.text("preflight.ready"))
         self.preflight_summary.setPlainText("\n".join(lines))
@@ -3127,7 +3134,7 @@ class MainWindow(QMainWindow):
             self.translations.text("confirm.warnings.message", count=len(warnings))
         )
         dialog.setInformativeText(
-            "\n".join(f"- {self._issue_message(issue)}" for issue in warnings)
+            "\n".join(f"- {line}" for line in self._grouped_issue_messages(warnings))
         )
         dialog.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -3258,8 +3265,37 @@ class MainWindow(QMainWindow):
         self.cancel_button.setEnabled(False)
 
     def _record_issues(self, issues: tuple[ApplicationIssue, ...]) -> None:
+        for line in self._grouped_issue_lines(issues):
+            self._record_error(line)
+
+    def _grouped_issue_lines(
+        self,
+        issues: tuple[ApplicationIssue, ...],
+    ) -> tuple[str, ...]:
+        return self._group_issue_text(issues, self._format_issue)
+
+    def _grouped_issue_messages(
+        self,
+        issues: tuple[ApplicationIssue, ...],
+    ) -> tuple[str, ...]:
+        return self._group_issue_text(issues, self._issue_message)
+
+    @staticmethod
+    def _group_issue_text(
+        issues: tuple[ApplicationIssue, ...],
+        formatter: Callable[[ApplicationIssue], str],
+    ) -> tuple[str, ...]:
+        grouped: dict[
+            tuple[ApplicationSeverity, str, str, str | None], tuple[ApplicationIssue, int]
+        ] = {}
         for issue in issues:
-            self._record_error(self._format_issue(issue))
+            key = (issue.severity, issue.code, issue.message, issue.source)
+            current, count = grouped.get(key, (issue, 0))
+            grouped[key] = (current, count + 1)
+        return tuple(
+            formatter(issue) + (f" (x{count})" if count > 1 else "")
+            for issue, count in grouped.values()
+        )
 
     def _format_issue(self, issue: ApplicationIssue) -> str:
         severity = self.translations.text(f"severity.{issue.severity.value}")
@@ -3273,9 +3309,14 @@ class MainWindow(QMainWindow):
             return issue.message
         key = f"issue.{issue.code}"
         localized = self.translations.text(key)
-        if localized == key and issue.code.startswith("output_"):
-            fallback_key = f"issue.{issue.code.removeprefix('output_')}"
-            localized = self.translations.text(fallback_key)
+        if localized == key:
+            for prefix in ("output_", "merge_", "report_"):
+                if not issue.code.startswith(prefix):
+                    continue
+                fallback_key = f"issue.{issue.code.removeprefix(prefix)}"
+                localized = self.translations.text(fallback_key)
+                if localized != fallback_key:
+                    break
         if localized.startswith("issue."):
             return issue.message
         if localized == issue.message:

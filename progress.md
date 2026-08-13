@@ -1,5 +1,40 @@
 # 进度日志
 
+## 会话：2026-08-14（v1.0.2-beta.1 测试版发布）
+
+### 预发布准备
+- **状态：** in_progress
+- 用户要求发布 `v1.0.2-beta.1`；沿用已完成的发布后修复，并恢复端到端发布闭环。
+- Python 项目/EXE 使用 PEP 440 版本 `1.0.2b1`，Git tag、ZIP 和 Release 展示使用 SemVer
+  `1.0.2-beta.1`；Windows 工作流负责显式映射和一致性校验。
+- 已补充双语测试版下载说明、Changelog 和内容完整的 Release notes；`v1.0.1` 继续标为稳定版。
+- 本机聚焦回归 82 passed；完整回归 330 passed、2 deselected、coverage 84.86%。两项仅依赖
+  GitHub Actions 创建的临时 Windows SMB/UNC 共享；Ruff 与 64 个源码文件的严格 Mypy 全部通过。
+- 成功构建 `bdsubmerge-1.0.2b1` sdist/wheel，wheel 包含中英文翻译资源；PyInstaller 6.22.0
+  成功生成 Windows onedir。
+- 本机最终 ZIP 为 `BDSubMerge-1.0.2-beta.1-windows-x64.zip`，54,333,527 字节，SHA-256
+  `764640fc4c8c261ce5b24966026fecc9d2aaa6cc8a5bae33f89c28d5caf79e74`。包内共 283 个条目，
+  根目录仅有 EXE、项目 `LICENSE` 和 `_internal`，无根 `LICENSES/` 或 `THIRD_PARTY_NOTICES.md`。
+- 清空 Python 环境并收窄 PATH 后，最终 EXE 的 `--expect-version 1.0.2b1` 烟测退出 0；中文
+  浅色截图为 2160x1500、106,123 字节，目视确认字体、布局和本批 UI 修复正常。
+
+## 会话：2026-08-14（v1.0.1 发布后反馈，不发版）
+
+### 表格、边界列表、时间线与映射诊断
+- **状态：** in_progress
+- 用户确认本批先解释置信度与 `event ends at or before zero`，再修复 UI/本地化/映射体验，明确不发版。
+- 当前置信度成本包含字幕与区间时长差、过长 8 倍惩罚、边界置信度、短区间和估算时长惩罚；此外第二优局部候选成本差不超过参考时长 3% 时会无条件判低。30 ms 时长差本身不足以判低，密集章节产生的近似候选歧义是主要嫌疑。
+- `event ends at or before zero` 表示应用最终 offset 后事件结束 tick 不大于 0，合并器按设计丢弃；大量出现意味着源文件包含较多零点前事件，或整体负向偏移把事件推到零点前。
+- 中文目录已有 `issue.event_dropped_before_zero`，但应用层投影为 `merge_event_dropped_before_zero`，UI 使用完整码查找导致中文漏匹配，需规范化阶段前缀后再查翻译。
+- 截图确认表格长文件名仍过早省略、边界 popup 沿用单元格宽度而截断、时间线缩放后文字被水平拉伸。
+- 已实现首批修复并运行 75 项聚焦测试全部通过、Ruff 通过；严格 Mypy 发现新增 issue 分组键将可空 `source` 标成必填字符串，已按模型契约改为 `str | None` 后继续验证。
+- 首轮完整测试使用了旧 AC-02 节点路径，未实际 deselect 当前的两项环境测试；结果为 329 passed、2 failed、coverage 84.88%。两项失败分别是受限本机访问故意不存在 UNC 路径返回 `WinError 5`，以及未提供 CI 临时 SMB share；Ruff 与 64 模块严格 Mypy 均通过。已通过 collect-only 确认当前精确节点并重新执行。
+- 完成修复：字幕文件列装载后按最长内容扩宽且仍保持 Interactive；边界 combo popup 独立按最长“章节 ID + 时间”加宽并禁用省略；时间线全部文字忽略 view transform，横向滚轮缩放不再拉伸字形。
+- `merge_`、`output_`、`report_` 阶段前缀诊断会回退到基础中文键；零点前事件中文说明明确为“应用时间偏移后”。相同严重度、代码、消息和来源的重复 issue 在摘要、确认框和错误详情中合并为一行 `(xN)`，底层 warning 数与 merge report 计数不变。
+- 置信度歧义只在当前成本至少达到 medium 阈值时才升级为 low；23:39.930 对 23:39.960 的 30 ms/2700 ticks 样例为 score 100、high。新增保护测试确认约 10% 误差且候选接近时仍为 low。
+- 最终局部回归 79 passed；完整本机回归 330 passed、2 deselected、coverage 84.86%，两项仅为 CI 临时 SMB/UNC 环境。Ruff、64 模块严格 Mypy、`git diff --check` 均通过。
+- 原生 Windows 中文截图为 2160x1500、168,264 字节，目视确认 CJK 字体、布局、字幕表和时间线正常。本批按用户要求未改版本、未提交、未推送、未打 tag、未发版。
+
 ## 会话：2026-08-13（v1.0.1 用户反馈）
 
 ### 反馈收集与实现审计

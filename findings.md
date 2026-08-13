@@ -105,6 +105,13 @@
 | CLI 不新增 `relocate` 子命令 | 任务书未要求该命令，现有非交互阻断已满足 CLI 边界，避免扩大发布表面 |
 | CI 覆盖 Ubuntu 与 Windows | Linux 快速发现问题，Windows 验证目标平台 |
 
+## 2026-08-14 发布后反馈定位
+- 映射置信度不是单看可见时长差：`_interval_cost` 还计入边界置信度、短区间、估算时长，字幕超过区间时按 8 倍惩罚；`classify_confidence` 当前还会让 3% 范围内的局部替代候选无条件触发 low。
+- 对截图中 23:39.930 与 23:39.960 的 30 ms 差值，纯时长成本远低于 medium/low 阈值；若显示 low，最可能是章节密集造成局部候选歧义，或边界置信度额外扣分。需要让歧义只降低本来就不够精确的候选，并在 UI tooltip 暴露评分/原因。
+- 合并引擎只在 offset 后 `end <= 0` 时产生 `event_dropped_before_zero`；`start < 0 < end` 会裁剪并产生 `event_start_clipped`。因此大量 dropped 警告是大量事件整体落在零点前，不是 30 ms 尾差直接造成。
+- 应用层给合并 notice code 加 `merge_` 前缀，中文资源键没有该前缀；UI 本地化应先尝试完整码，再安全剥离已知阶段前缀，稳定码与原始英文详情继续保留。
+- ASS 分析的有效时长已忽略 `Comment` 尾部，但合并仍保留并时间平移全部事件。`offset=0 ms` 且起始边界为 `chapter:0` 时大量 `event_dropped_before_zero` 通常来自源 ASS 中结束时间为零的 Comment/模板/无效事件；它们会被逐条丢弃，UI 应合并重复提示，报告继续保留精确 dropped count。
+
 ## 已知风险
 - 已有由规范二进制布局构造并经真实 Shinya 解析器读取的匿名 MPLS 夹具；复杂商业盘
   与更多真实 SUP 样本仍需持续扩展。
@@ -127,3 +134,10 @@
 - Codex 沙箱的 Windows OpenSSH 默认解析到 `C:\Users\CodexSandboxOnline\.ssh`，会导致
   GitHub 主机密钥校验失败。Git 操作必须显式使用 `C:\Users\Hanam\.ssh\config` 和
   `C:\Users\Hanam\.ssh\known_hosts`，从而调用用户现有 SSH 凭据。
+# v1.0.2-beta.1 发布发现（2026-08-14）
+
+- Python 包版本必须符合 PEP 440，因此 beta 版本写作 `1.0.2b1`；公开 Git 标签采用 SemVer
+  `v1.0.2-beta.1`。打包工作流必须映射两者，不能直接用字符串相等判断。
+- EXE `--expect-version` 应校验内部版本 `1.0.2b1`，ZIP 文件名和 GitHub Release 标题则应使用
+  `1.0.2-beta.1`，避免用户面对 Python 版本拼法。
+- 现有 Release 创建逻辑会把含连字符的 tag 标记为 prerelease，可直接覆盖本测试版语义。

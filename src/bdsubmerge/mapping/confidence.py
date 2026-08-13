@@ -20,7 +20,9 @@ def classify_confidence(
         and (alternative_cost - cost) * 100
         <= reference_duration_90k * config.ambiguity_margin_percent
     )
-    if cost_ratio >= config.low_cost_ratio_percent or ambiguous:
+    if cost_ratio >= config.low_cost_ratio_percent or (
+        ambiguous and cost_ratio >= config.medium_cost_ratio_percent
+    ):
         return MappingConfidence.LOW
     if cost_ratio >= config.medium_cost_ratio_percent:
         return MappingConfidence.MEDIUM

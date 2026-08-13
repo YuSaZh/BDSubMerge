@@ -498,6 +498,7 @@ def test_preflight_displays_expected_counts_and_warning_summary(
         payload=None,
         issues=(
             ApplicationIssue(ApplicationSeverity.WARNING, "merge_review", "review output"),
+            ApplicationIssue(ApplicationSeverity.WARNING, "merge_review", "review output"),
         ),
     )
 
@@ -506,7 +507,9 @@ def test_preflight_displays_expected_counts_and_warning_summary(
     summary = window.preflight_summary.toPlainText()
     assert "预计事件数：3" in summary  # noqa: RUF001
     assert "预计样式数：2" in summary  # noqa: RUF001
-    assert "警告数：1" in summary  # noqa: RUF001
+    assert "警告数：2" in summary  # noqa: RUF001
+    assert summary.count("merge_review") == 1
+    assert "(x2)" in summary
 
 
 @pytest.mark.parametrize("confirmed", (False, True))
@@ -1803,6 +1806,12 @@ def test_preflight_installs_boundary_combos_in_mapping_table(
     expanded_label = start_combo.itemText(start_combo.findData("user:middle"))
     assert expanded_label.startswith("user:middle  ")
     assert "00:00:05.000" in expanded_label
+    longest_label_width = max(
+        start_combo.fontMetrics().horizontalAdvance(start_combo.itemText(index))
+        for index in range(start_combo.count())
+    )
+    assert start_combo.view().textElideMode() is Qt.TextElideMode.ElideNone
+    assert start_combo.view().minimumWidth() >= longest_label_width
 
 
 def test_mapping_layout_is_resizable_and_report_options_are_collapsed(
@@ -1840,6 +1849,8 @@ def test_mapping_filename_tooltip_and_chinese_issue_text(
     window._populate_mapping_table()
 
     assert window.mapping_table.item(0, 1).toolTip() == str(subtitle)
+    filename_width = window.mapping_table.fontMetrics().horizontalAdvance(subtitle.name)
+    assert window.mapping_table.columnWidth(1) >= filename_width
     issue = ApplicationIssue(
         ApplicationSeverity.WARNING,
         "low_mapping_confidence",
@@ -1848,6 +1859,16 @@ def test_mapping_filename_tooltip_and_chinese_issue_text(
     message = window._format_issue(issue)
     assert message.startswith("[警告] low_mapping_confidence: 低置信度自动映射需要明确确认")
     assert "原始信息:" in message
+    prefixed_issue = ApplicationIssue(
+        ApplicationSeverity.WARNING,
+        "merge_event_dropped_before_zero",
+        "event ends at or before zero",
+        str(subtitle),
+    )
+    prefixed_message = window._format_issue(prefixed_issue)
+    assert "应用时间偏移后，结束时间不晚于零的事件已丢弃" in prefixed_message  # noqa: RUF001
+    assert "原始信息: event ends at or before zero" in prefixed_message
+    assert window._grouped_issue_lines((prefixed_issue, prefixed_issue))[0].endswith("(x2)")
     assert window._localized_mapping_warnings(
         (
             "subtitle duration is estimated",

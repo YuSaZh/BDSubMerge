@@ -4,7 +4,7 @@
 已按照项目任务书完成并发布 BDSubMerge 1.0；当前使用本机 Python 3.12 完成 Python 依赖、测试、质量检查、构建与打包，需要新增非 Python 环境的验证由精确提交 SHA 的 GitHub Actions 完成。
 
 ## 当前阶段
-阶段 7/7 v1.0.1 用户反馈修复：界面可用性、诊断本地化与发布
+阶段 9/9 发布 `v1.0.2-beta.1` 测试版
 
 ## 工作模型（2026-08-13 用户最新确认）
 1. `v1.0.0` 发布基线为提交 `e42354dab36b3897f94da201259dc17b9550a02a`；CI run `31699687423` 与正式 Package/Release run `31702184769` 均成功。
@@ -94,7 +94,24 @@
 - [x] 未勾选写入合并报告时折叠报告选项
 - [x] 边界单元格仅显示章节，下拉选项保留章节与时间
 - [x] 统一版本为 `1.0.1`，补充有实际内容的 Changelog 与 GitHub Release notes
-- [ ] 由精确 SHA 的 GitHub Actions 完成双平台测试、截图、Windows 打包和公开 Release 审计
+- [x] 由精确 SHA 的 GitHub Actions 完成双平台测试、截图、Windows 打包和公开 Release 审计
+- **状态：** complete
+
+### 阶段 8：v1.0.1 发布后反馈修复（不发版）
+- [x] 表格在可用宽度足够时完整显示内容，并继续允许手动调列宽
+- [x] 边界下拉弹出列表独立加宽，收起值仍只显示章节 ID
+- [x] 时间线滚轮缩放保持字体字形和字号不变
+- [x] `merge_event_dropped_before_zero` 等带阶段前缀诊断正确中文化
+- [x] 调整并解释近似精确映射被候选歧义过度降级的问题
+- [x] 补齐局部与全量 Python 3.12 回归验证，不改版本、不打 tag、不发版
+- **状态：** complete
+
+### 阶段 9：v1.0.2-beta.1 测试版发布
+- [x] 将 Python 包版本更新为 PEP 440 `1.0.2b1`，并映射到 SemVer 标签 `v1.0.2-beta.1`
+- [x] 补充双语 README、Changelog 和包含实际改动摘要的 Release notes
+- [x] 完成本机 Python 3.12 测试、Ruff、Mypy、构建与 Windows 包审计
+- [ ] 提交并推送 `main`，按精确提交 SHA 审计 GitHub Actions
+- [ ] 创建并推送 annotated tag，验证 prerelease、ZIP、SHA256 和许可证结构
 - **状态：** in_progress
 
 ## 关键约束
@@ -154,3 +171,4 @@
 | 本地 ZIP 内容检查竞态 | 1 | 压缩与检查并行导致检查先于 ZIP 生成完成；压缩已成功，后续改为串行审计现有 ZIP |
 | UI 截图参数假设 | 1 | `capture_workspace.py` 的目标路径是位置参数，不支持 `--output`；按脚本帮助更正调用 |
 | GitHub SSH 瞬时拒绝 | 1 | 首次 publickey 失败后按边界停止；同一 key 复测认证为 `YuSaZh` 且 `git ls-remote` 成功，确认无需改 key 或认证配置并继续发布 |
+| 发布后批次完整测试 deselect 路径过时 | 1 | collect-only 确认当前两项 AC-02 UNC 节点位于 `test_output_project_acceptance.py`，按精确节点重跑；不把环境失败归因于本轮源码 |

@@ -264,7 +264,11 @@ class TimelineView(QGraphicsView):
         self._boundary_items.clear()
         playlist = self._playlist
         if playlist is None or int(playlist.duration_90k) <= 0:
-            scene.addText(self._empty_text)
+            empty_label = scene.addText(self._empty_text)
+            empty_label.setFlag(
+                QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations,
+                True,
+            )
             scene.setSceneRect(QRectF(0, 0, 720, 150))
             if fit:
                 self.fitInView(scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
@@ -278,8 +282,17 @@ class TimelineView(QGraphicsView):
         self._render_user_boundaries(scene, width, total)
         baseline_y = 120
         scene.addLine(0, baseline_y, width, baseline_y, QPen(self.palette().text().color()))
-        scene.addText(self._format_time(0)).setPos(0, baseline_y + 1)
+        start_label = scene.addText(self._format_time(0))
+        start_label.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations,
+            True,
+        )
+        start_label.setPos(0, baseline_y + 1)
         end_label = scene.addText(self._format_time(total))
+        end_label.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations,
+            True,
+        )
         end_label.setPos(max(width - 132, 0), baseline_y + 1)
         scene.setSceneRect(QRectF(0, 0, width, 158))
         if fit:
@@ -311,6 +324,10 @@ class TimelineView(QGraphicsView):
             )
             if end - start >= 42:
                 label = scene.addText(f"{index + 1}  {item.clip_id}")
+                label.setFlag(
+                    QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations,
+                    True,
+                )
                 label.setDefaultTextColor(QColor("#ffffff"))
                 label.setPos(start + 4, 28)
         chapter_pen = QPen(QColor("#d14545"), 2)
@@ -384,6 +401,10 @@ class TimelineView(QGraphicsView):
             rectangle.setToolTip(tooltip)
             if end - start >= 46:
                 label = scene.addText(episode.label[:18])
+                label.setFlag(
+                    QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations,
+                    True,
+                )
                 label.setDefaultTextColor(QColor("#ffffff"))
                 label.setPos(start + 4, 75)
                 label.setData(ITEM_KIND_ROLE, "episode")

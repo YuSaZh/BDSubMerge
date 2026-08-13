@@ -4,6 +4,20 @@ All notable changes to BDSubMerge are recorded here.
 
 ## Unreleased
 
+## 1.0.2-beta.1 - 2026-08-14
+
+### Fixed
+
+- Kept the subtitle filename column expanded when sufficient width is available while preserving
+  manual resizing and full-path tooltips.
+- Widened the chapter boundary option list independently from its compact chapter-only cell value.
+- Prevented timeline labels from stretching horizontally during mouse-wheel zoom.
+- Added Simplified Chinese fallback for merge, output, and report diagnostics, including a clearer
+  explanation when an event is dropped after its time offset places it at or before zero.
+- Grouped repeated diagnostics in the GUI without changing the underlying warning and report counts.
+- Prevented near-exact duration matches from being downgraded solely because another local candidate
+  is close; materially inaccurate ambiguous matches remain low confidence.
+
 ## 1.0.1 - 2026-08-13
 
 ### Added

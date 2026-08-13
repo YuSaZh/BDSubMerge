@@ -2,6 +2,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QWheelEvent
+from PySide6.QtWidgets import QGraphicsTextItem
 from pytestqt.qtbot import QtBot
 
 from bdsubmerge.domain.models import PlaylistInfo
@@ -214,3 +215,12 @@ def test_mouse_wheel_zooms_timeline_without_modifier(qtbot: QtBot) -> None:
     assert timeline.transform().m22() == initial_vertical_scale
     assert timeline.zoom_percent == 120
     assert zoom_levels == [120]
+    text_items = [
+        item for item in timeline.scene().items() if isinstance(item, QGraphicsTextItem)
+    ]
+    assert text_items
+    assert all(
+        item.flags()
+        & QGraphicsTextItem.GraphicsItemFlag.ItemIgnoresTransformations
+        for item in text_items
+    )

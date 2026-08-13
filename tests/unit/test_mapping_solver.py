@@ -168,3 +168,33 @@ def test_equal_cost_mapping_uses_stable_earliest_boundary_tie_breaker() -> None:
         "b1",
     )
     assert reversed_input.mappings[0] == forward.mappings[0]
+
+
+def test_near_exact_duration_stays_high_confidence_despite_nearby_boundaries() -> None:
+    duration = 23 * 60 * SECOND + 39 * SECOND + 930 * 90
+    episode = EpisodeRequest("e1", MediaTick90k(duration))
+    boundaries = (
+        _boundary("chapter:0", 0),
+        boundary("chapter:6", duration + 30 * 90, SOURCE),
+        boundary("chapter:7", duration + 10 * SECOND, SOURCE),
+    )
+
+    result = auto_map_episodes((episode,), boundaries)
+
+    assert result.mappings[0].end_boundary.id == "chapter:6"
+    assert result.mappings[0].confidence is MappingConfidence.HIGH
+
+
+def test_ambiguous_mapping_with_material_error_remains_low_confidence() -> None:
+    episode = EpisodeRequest("e1", MediaTick90k(100 * SECOND))
+    boundaries = (
+        _boundary("chapter:0", 0),
+        _boundary("chapter:1", 110),
+        _boundary("chapter:2", 112),
+    )
+    config = MappingCostConfig(short_interval_threshold_90k=MediaTick90k(0))
+
+    result = auto_map_episodes((episode,), boundaries, config=config)
+
+    assert result.mappings[0].end_boundary.id == "chapter:1"
+    assert result.mappings[0].confidence is MappingConfidence.LOW
