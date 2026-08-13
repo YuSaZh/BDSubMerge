@@ -4,10 +4,10 @@
 - 工具面向 Windows 11，输入 BDMV/PLAYLIST/MPLS/index.bdmv，输出外置 ASS/SSA/SRT/SUP。
 - 任务书要求自动播放列表推荐、分集字幕映射、可视化时间线、多输出目标、项目复现和 CLI。
 - UI 默认简体中文并支持英文，耗时任务必须在后台运行。
-- 本地禁止任何构建和测试，全部验证必须通过 GitHub Actions。
+- 本机禁止构建、测试、lint、类型检查、依赖安装和打包；本机只做源码检查、静态搜索、Git 操作与 `git diff --check`，所有执行型验证必须提交并推送到 GitHub Actions。
 
 ## 研究发现
-- GitHub 仓库为 `YuSaZh/BDSubMerge`，本机 SSH 和 Credential Manager 均可提供已有凭据。
+- GitHub 仓库为 `YuSaZh/BDSubMerge`，远端使用 SSH；Git/GitHub 操作应直接调用本机现有凭据，不启动浏览器登录。
 - 当前已推送 M5 核心远程验证：run `31627068738` 的 Ubuntu、Windows、源码包任务全部成功。
 - M1-M4 的领域逻辑与输出边界已经实现，当前缺口集中在 M5 集成、CLI、UI、打包与完整验收。
 - Shinya 官方导入为 `shinya.bd.MoviePlaylistFile`；匿名 MPLS0200 二进制夹具固定了
@@ -17,6 +17,7 @@
 - BDMV 目录只做存在性检查；目录 mtime 会被合法生成的 `index.ass` 改变，因此输入变化判断以 index、MPLS 和字幕文件指纹为准。
 - 输出目标可能尚不存在，恢复时必须无条件优先项目相对路径；源文件则只有相对候选存在时才优先，二者使用独立解析 API。
 - 用户边界与自动边界同刻时会被规范化为一个候选；应用层需把持久化锁的原始边界 ID 映射到规范 ID，避免恢复失败。
+- 当前 GUI 批次已将应用层 `MappingResult` 投影为时间线分集与实际内容区间，接通映射表/时间线双向选择，并让边界下拉或拖动生成 `MappingLock` 后按 revision 重新预检；该结论仍需 GitHub Actions 的 Qt 测试验证。
 
 ## 技术决策
 | 决策 | 理由 |
@@ -39,6 +40,8 @@
 - GitHub Actions run `31627068738`：M5 核心在 Windows、Ubuntu 与 source distribution 全部成功。
 - GitHub Actions run `31630779273`：source distribution 成功；Ubuntu 与 Windows
   均只在 Ruff 阶段因同一组 16 项诊断失败，后续 Mypy、Pytest 和 UI 截图未执行。
+- GitHub Actions run `31665885218`：提交 `1ca58d6` 的 Ubuntu、Windows、真实 UNC 与
+  source distribution 全部通过，是当前未提交 GUI 映射批次的绿色基线。
 - Ruff 修复提交 `f8c0552` 已推送；run `31659484298` 将诊断缩小为 2 项
   确定性排序问题，两个平台结果一致。
 - Codex 沙箱的 Windows OpenSSH 默认解析到 `C:\Users\CodexSandboxOnline\.ssh`，会导致

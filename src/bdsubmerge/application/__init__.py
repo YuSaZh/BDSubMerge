@@ -40,6 +40,12 @@ from .services import (
     SubtitleApplicationService,
     build_playlist_boundaries,
 )
+from .subtitle_discovery import (
+    SUPPORTED_SUBTITLE_SUFFIXES,
+    append_discovered_subtitle_paths,
+    discover_subtitle_paths,
+    natural_path_key,
+)
 
 __all__ = [
     "JRIVER_INCOMPATIBLE_WARNING",
@@ -69,9 +75,13 @@ __all__ = [
     "ReportStyleRename",
     "ScanRequest",
     "ScanResult",
+    "SUPPORTED_SUBTITLE_SUFFIXES",
     "SubtitleApplicationService",
     "SubtitleAsset",
     "SubtitleInput",
+    "append_discovered_subtitle_paths",
     "build_playlist_boundaries",
+    "discover_subtitle_paths",
+    "natural_path_key",
     "select_playlists",
 ]

@@ -1,15 +1,21 @@
+from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from PySide6.QtCore import QItemSelectionModel, QSettings, Qt
+from PySide6.QtWidgets import QComboBox
 from pytestqt.qtbot import QtBot
 
 from bdsubmerge.application import (
     ApplicationIssue,
     ApplicationSeverity,
+    LoadSubtitlesRequest,
     LoadSubtitlesResult,
+    MergeReportFormat,
     PreparedMerge,
     ScanResult,
     SubtitleAsset,
+    SubtitleInput,
 )
 from bdsubmerge.domain.models import (
     BdmvLayout,
@@ -19,7 +25,13 @@ from bdsubmerge.domain.models import (
     ReferenceStatus,
 )
 from bdsubmerge.domain.timebase import MediaTick90k
-from bdsubmerge.mapping import BoundaryKind, MappingLock
+from bdsubmerge.mapping import (
+    BoundaryKind,
+    EpisodeMapping,
+    MappingConfidence,
+    MappingLock,
+    MappingResult,
+)
 from bdsubmerge.output import (
     CollisionPolicy,
     OutputPreset,
@@ -38,6 +50,7 @@ from bdsubmerge.project import (
 )
 from bdsubmerge.subtitles import SubtitleFormat, TextSubtitleInfo, parse_ass
 from bdsubmerge.ui.main_window import MainWindow
+from bdsubmerge.ui.timeline import TimelineEpisode
 
 
 def _settings(tmp_path: Path) -> QSettings:
@@ -120,6 +133,54 @@ def _select_playlist_rows(window: MainWindow, rows: tuple[int, ...]) -> None:
         )
     window.playlist_table.blockSignals(False)
     window.select_playlist()
+
+
+def _prepared_mapping_window(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> tuple[MainWindow, Path, PreparedMerge]:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    scan = _scan_result(tmp_path)
+    window._scan_finished(scan)
+    subtitle = tmp_path / "episode.ass"
+    subtitle.write_text("subtitle", encoding="utf-8")
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.20,0:00:01.20,Default,line\n"
+    )
+    asset = SubtitleAsset(
+        subtitle,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 18_000, 108_000, 108_000, False),
+        "utf-8",
+    )
+    window.subtitle_result = LoadSubtitlesResult((asset,), SubtitleFormat.ASS)
+    window.subtitle_paths = [subtitle]
+    window._populate_mapping_table()
+    window.timeline.set_user_boundaries((("user:middle", 450_000),))
+    boundaries = window._boundary_by_id()
+    mapping = EpisodeMapping(
+        "episode-1",
+        str(subtitle),
+        boundaries["playlist:start"],
+        boundaries["playlist:end"],
+        MediaTick90k(9_000),
+        0,
+        MappingConfidence.HIGH,
+        warnings=("review",),
+    )
+    prepared = PreparedMerge(
+        MappingResult((mapping,), 0, MappingConfidence.HIGH),
+        None,
+        None,
+        None,
+        (),
+    )
+    window._preflight_finished(prepared)
+    return window, subtitle, prepared
 
 
 def test_window_defaults_to_chinese_and_switches_to_english(
@@ -283,6 +344,46 @@ def test_project_state_captures_subtitles_mapping_output_and_notes(
     assert {boundary.id for boundary in state.boundaries} == {"playlist:start", "playlist:end"}
 
 
+def test_project_state_captures_and_restores_multiple_output_targets(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    window._scan_finished(_scan_result(tmp_path))
+    subtitle = tmp_path / "episode.ass"
+    subtitle.write_text("subtitle", encoding="utf-8")
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    asset = SubtitleAsset(
+        subtitle,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+        "utf-8",
+    )
+    window.subtitle_result = LoadSubtitlesResult((asset,), SubtitleFormat.ASS)
+    window.subtitle_paths = [subtitle]
+    second_path = tmp_path / "exports" / "merged.ass"
+
+    window.add_output_target()
+    window.output_path.setText(str(second_path))
+
+    state = window._project_state()
+    assert tuple(item.id for item in state.outputs) == ("primary", "output-2")
+    assert state.outputs[1].resolved_path == second_path
+
+    restored = MainWindow(settings=_settings(tmp_path / "restored"))
+    qtbot.addWidget(restored)
+    restored._restore_output_states(state.outputs)
+
+    assert restored.output_targets_table.rowCount() == 2
+    assert restored.output_states == list(state.outputs)
+    assert restored.editing_output_id == "primary"
+
+
 def test_open_project_source_checks_are_shown_without_modal_dialog(
     qtbot: QtBot, tmp_path: Path
 ) -> None:
@@ -327,6 +428,123 @@ def test_all_five_output_modes_are_available(qtbot: QtBot, tmp_path: Path) -> No
     )
 
     assert modes == ("jriver", "playlist", "disc_name", "custom", "full_path")
+
+
+def test_multiple_targets_have_unique_ids_and_are_forwarded_to_prepare(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    window._scan_finished(_scan_result(tmp_path))
+    subtitle = tmp_path / "episode.ass"
+    subtitle.write_text("subtitle", encoding="utf-8")
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    asset = SubtitleAsset(
+        subtitle,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+        "utf-8",
+    )
+    window.subtitle_result = LoadSubtitlesResult((asset,), SubtitleFormat.ASS)
+    window.subtitle_paths = [subtitle]
+
+    window.add_output_target()
+    window.output_path.setText(str(tmp_path / "alternate.ass"))
+    window.add_output_target()
+    window.output_path.setText(str(tmp_path / "archive.ass"))
+
+    request = window._prepare_request()
+
+    assert request is not None
+    assert tuple(target.target_id for target in request.output_targets) == (
+        "primary",
+        "output-2",
+        "output-3",
+    )
+    assert len({target.target_id for target in request.output_targets}) == 3
+
+
+def test_optional_report_configuration_is_forwarded_and_shown_in_preflight(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    window._scan_finished(_scan_result(tmp_path))
+    subtitle = tmp_path / "episode.ass"
+    subtitle.write_text("subtitle", encoding="utf-8")
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    asset = SubtitleAsset(
+        subtitle,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+        "utf-8",
+    )
+    window.subtitle_result = LoadSubtitlesResult((asset,), SubtitleFormat.ASS)
+    window.subtitle_paths = [subtitle]
+    report_path = tmp_path / "reports" / "merge.txt"
+    window.report_enabled.setChecked(True)
+    window.report_format.setCurrentIndex(
+        window.report_format.findData(MergeReportFormat.TEXT.value)
+    )
+    window.report_path.setText(str(report_path))
+    window.report_collision_policy.setCurrentIndex(
+        window.report_collision_policy.findData(CollisionPolicy.BACKUP.value)
+    )
+
+    request = window._prepare_request()
+
+    assert request is not None
+    assert request.report_target is not None
+    assert request.report_target.path == report_path
+    assert request.report_target.report_format is MergeReportFormat.TEXT
+    assert request.report_target.collision_policy is CollisionPolicy.BACKUP
+
+    resolved_report = ResolvedOutput(
+        target_id="__bdsubmerge_merge_report__",
+        preset=OutputPreset.FULL_PATH,
+        path=report_path,
+        encoding="utf-8",
+        collision_policy=CollisionPolicy.BACKUP,
+    )
+    primary_output = ResolvedOutput(
+        target_id="primary",
+        preset=OutputPreset.JRIVER,
+        path=tmp_path / "Title" / "BDMV" / "index.ass",
+        encoding="utf-8-sig",
+        collision_policy=CollisionPolicy.ABORT,
+    )
+    alternate_output = ResolvedOutput(
+        target_id="output-2",
+        preset=OutputPreset.FULL_PATH,
+        path=tmp_path / "alternate.ass",
+        encoding="utf-8-sig",
+        collision_policy=CollisionPolicy.ABORT,
+    )
+    prepared = PreparedMerge(
+        mapping=None,
+        output_preflight=PreflightResult((primary_output, alternate_output), ()),
+        report=None,
+        payload=None,
+        issues=(),
+        report_preflight=PreflightResult((resolved_report,), ()),
+    )
+    window._preflight_finished(prepared)
+
+    summary = window.preflight_summary.toPlainText()
+    assert str(subtitle) in summary
+    assert str(primary_output.path) in summary
+    assert str(alternate_output.path) in summary
+    assert str(report_path) in summary
 
 
 def test_custom_output_exposes_directory_template_and_final_path(
@@ -459,6 +677,156 @@ def test_project_mapping_is_restored_by_subtitle_id(
     assert window.mapping_table.item(0, 7).text() == "10 ms"
 
 
+def test_adding_directory_preserves_manual_order_and_appends_naturally(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    subtitle_dir = tmp_path / "Subtitles"
+    subtitle_dir.mkdir()
+    episode_1 = subtitle_dir / "E1.ass"
+    episode_2 = subtitle_dir / "E2.ass"
+    episode_10 = subtitle_dir / "E10.ass"
+    for path in (episode_1, episode_2, episode_10):
+        path.write_text("subtitle", encoding="utf-8")
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    assets = {
+        path: SubtitleAsset(
+            path,
+            SubtitleFormat.ASS,
+            document,
+            TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+            "utf-8",
+        )
+        for path in (episode_1, episode_2, episode_10)
+    }
+    window.subtitle_result = LoadSubtitlesResult(
+        (assets[episode_1], assets[episode_10]),
+        SubtitleFormat.ASS,
+    )
+    window.subtitle_paths = [episode_1, episode_10]
+    window._populate_mapping_table()
+    first_path = window.mapping_table.item(0, 0).data(Qt.ItemDataRole.UserRole)
+    last_path = window.mapping_table.item(1, 0).data(Qt.ItemDataRole.UserRole)
+    window.mapping_table.item(0, 0).setData(Qt.ItemDataRole.UserRole, last_path)
+    window.mapping_table.item(1, 0).setData(Qt.ItemDataRole.UserRole, first_path)
+    requests: list[LoadSubtitlesRequest] = []
+
+    def load_ordered(request: LoadSubtitlesRequest) -> LoadSubtitlesResult:
+        requests.append(request)
+        return LoadSubtitlesResult(
+            tuple(assets[source.path] for source in request.sources),
+            SubtitleFormat.ASS,
+        )
+
+    def run_immediately(
+        operation: Callable[[], object],
+        status: str,
+        success: Callable[[object], None],
+    ) -> None:
+        del status
+        success(operation())
+
+    monkeypatch.setattr(window.subtitle_service, "load_ordered", load_ordered)
+    monkeypatch.setattr(window, "_start_task", run_immediately)
+
+    window.add_subtitle_paths((subtitle_dir,))
+    window.add_subtitle_paths((subtitle_dir,))
+
+    assert len(requests) == 1
+    assert tuple(source.path for source in requests[0].sources) == (
+        episode_10,
+        episode_1,
+        episode_2,
+    )
+
+
+def test_project_restore_uses_saved_subtitle_order_and_encoding(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    scan = _scan_result(tmp_path)
+    window._scan_finished(scan)
+    episode_1 = tmp_path / "E1.ass"
+    episode_2 = tmp_path / "E2.ass"
+    stale = tmp_path / "stale.ass"
+    for path in (episode_1, episode_2, stale):
+        path.write_text("subtitle", encoding="utf-8")
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    assets = {
+        path: SubtitleAsset(
+            path,
+            SubtitleFormat.ASS,
+            document,
+            TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+            encoding,
+        )
+        for path, encoding in ((episode_1, "gb18030"), (episode_2, "shift_jis"))
+    }
+    requests: list[LoadSubtitlesRequest] = []
+
+    def load_ordered(request: LoadSubtitlesRequest) -> LoadSubtitlesResult:
+        requests.append(request)
+        return LoadSubtitlesResult(
+            tuple(assets[source.path] for source in request.sources),
+            SubtitleFormat.ASS,
+        )
+
+    def run_immediately(
+        operation: Callable[[], object],
+        status: str,
+        success: Callable[[object], None],
+    ) -> None:
+        del status
+        success(operation())
+
+    monkeypatch.setattr(window.subtitle_service, "load_ordered", load_ordered)
+    monkeypatch.setattr(window, "_start_task", run_immediately)
+    state = ProjectState(
+        scan.layout.bdmv_path,
+        scan.layout.index_bdmv_path,
+        scan.playlists[0].path,
+        scan.playlists[0].stem,
+        int(scan.playlists[0].duration_90k),
+        (),
+        (
+            SubtitleState("episode-2", episode_2, "ass", "shift_jis", 1),
+            SubtitleState("episode-1", episode_1, "ass", "gb18030", 0),
+        ),
+        (),
+        (),
+        (),
+    )
+    window.subtitle_paths = [stale]
+    window.locked_subtitles.add(stale)
+    window.subtitle_offsets_ms[stale] = 100
+    window.pending_project = RestoredProject(state, ())
+
+    window._continue_project_restore()
+
+    assert requests[0].sources == (
+        SubtitleInput(episode_1, "gb18030"),
+        SubtitleInput(episode_2, "shift_jis"),
+    )
+    assert window.subtitle_paths == [episode_1, episode_2]
+    assert tuple(window._row_path(row) for row in range(2)) == (episode_1, episode_2)
+    assert stale not in window.locked_subtitles
+    assert stale not in window.subtitle_offsets_ms
+
+
 def test_user_boundaries_are_forwarded_and_invalidate_preflight(
     qtbot: QtBot, tmp_path: Path
 ) -> None:
@@ -501,3 +869,170 @@ def test_deleting_user_boundary_drops_its_restored_lock(
     assert window.restored_mapping_locks == ()
     assert window.prepared is None
     assert window.mapping_dirty is True
+
+
+def test_prepared_mapping_is_projected_to_timeline_episode(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window, subtitle, _ = _prepared_mapping_window(qtbot, tmp_path)
+
+    episodes = window._timeline_episodes()
+
+    assert episodes == (
+        TimelineEpisode(
+            "episode-1",
+            subtitle.name,
+            0,
+            129_600_000,
+            27_000,
+            117_000,
+            "high",
+            False,
+            ("review",),
+        ),
+    )
+    assert window.timeline._episodes == episodes
+
+
+def test_preflight_installs_boundary_combos_in_mapping_table(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path)
+
+    start_combo = window.mapping_table.cellWidget(0, 4)
+    end_combo = window.mapping_table.cellWidget(0, 5)
+
+    assert isinstance(start_combo, QComboBox)
+    assert isinstance(end_combo, QComboBox)
+    assert start_combo.currentData() == "playlist:start"
+    assert end_combo.currentData() == "playlist:end"
+    assert start_combo.findData("user:middle") >= 0
+    assert end_combo.findData("user:middle") >= 0
+
+
+def test_mapping_table_and_timeline_selection_are_bidirectional(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path)
+
+    window.mapping_table.selectRow(0)
+    window.select_timeline_episode_from_table()
+
+    assert window.timeline._selected_episode_id == "episode-1"
+
+    window.mapping_table.clearSelection()
+    window.timeline.set_selected_episode(None)
+    window.select_mapping_row_from_timeline("episode-1")
+
+    assert tuple(
+        index.row()
+        for index in window.mapping_table.selectionModel().selectedRows(0)
+    ) == (0,)
+    assert window.timeline._selected_episode_id == "episode-1"
+
+
+def test_boundary_combo_creates_lock_and_schedules_mapping_preflight(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, subtitle, _ = _prepared_mapping_window(qtbot, tmp_path)
+    scheduled: list[None] = []
+
+    def schedule() -> None:
+        scheduled.append(None)
+        window.pending_preflight = True
+
+    monkeypatch.setattr(window, "_schedule_mapping_preflight", schedule)
+    start_combo = window.mapping_table.cellWidget(0, 4)
+    assert isinstance(start_combo, QComboBox)
+
+    start_combo.setCurrentIndex(start_combo.findData("user:middle"))
+
+    assert window.restored_mapping_locks == (
+        MappingLock(
+            "episode-1",
+            "user:middle",
+            "playlist:end",
+            MediaTick90k(9_000),
+        ),
+    )
+    assert subtitle in window.locked_subtitles
+    assert window.mapping_dirty is True
+    assert window.pending_preflight is True
+    assert scheduled == [None]
+
+
+def test_stale_preflight_revision_does_not_overwrite_manual_mapping(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, _, stale_prepared = _prepared_mapping_window(qtbot, tmp_path)
+    stale_revision = window.preflight_revision
+    monkeypatch.setattr(window, "_schedule_mapping_preflight", lambda: None)
+
+    window._apply_mapping_boundary("episode-1", "start", "user:middle")
+    window.pending_preflight = False
+    window._preflight_finished_for_revision(stale_prepared, stale_revision)
+
+    assert window.prepared is None
+    assert window.restored_mapping_locks == (
+        MappingLock(
+            "episode-1",
+            "user:middle",
+            "playlist:end",
+            MediaTick90k(9_000),
+        ),
+    )
+    assert window.mapping_dirty is True
+    assert window.pending_preflight is True
+
+
+def test_reset_mapping_clears_manual_mapping_state(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, subtitle, _ = _prepared_mapping_window(qtbot, tmp_path)
+    window.locked_subtitles.add(subtitle)
+    window.subtitle_offsets_ms[subtitle] = 125
+    window.restored_mapping_locks = (
+        MappingLock(
+            "episode-1",
+            "user:middle",
+            "playlist:end",
+            MediaTick90k(11_250),
+        ),
+    )
+    window.restored_mapping_snapshots = (
+        MappingSnapshot(
+            "episode-1",
+            "user:middle",
+            "playlist:end",
+            450_000,
+            129_600_000,
+            11_250,
+            True,
+            "high",
+        ),
+    )
+
+    def schedule() -> None:
+        window.pending_preflight = True
+
+    monkeypatch.setattr(window, "_schedule_mapping_preflight", schedule)
+
+    window.reset_automatic_mapping()
+
+    assert window.restored_mapping_locks == ()
+    assert window.subtitle_offsets_ms == {}
+    assert window.locked_subtitles == set()
+    assert window.timeline.user_boundaries == ()
+    assert window.restored_mapping_snapshots == ()
+    assert window.prepared is None
+    assert window.mapping_dirty is True
+    assert window.pending_preflight is True

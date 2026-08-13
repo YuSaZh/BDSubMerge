@@ -5,7 +5,13 @@ from pytestqt.qtbot import QtBot
 
 from bdsubmerge.domain.models import PlaylistInfo
 from bdsubmerge.domain.timebase import MediaTick90k
-from bdsubmerge.ui.timeline import TimelineView
+from bdsubmerge.mapping import BoundaryKind, BoundarySource, boundary
+from bdsubmerge.ui.timeline import (
+    TimeDisplayFormat,
+    TimelineEpisode,
+    TimelineView,
+    format_media_time,
+)
 
 
 def _playlist() -> PlaylistInfo:
@@ -49,3 +55,85 @@ def test_project_boundaries_can_be_restored(qtbot: QtBot) -> None:
     timeline.set_user_boundaries((("user:9", 123_456),))
 
     assert timeline.user_boundaries == (("user:9", 123_456),)
+
+
+def test_time_display_formats_use_integer_media_ticks() -> None:
+    ticks = 135_000
+
+    assert format_media_time(ticks, TimeDisplayFormat.CLOCK) == "00:00:01.500"
+    assert (
+        format_media_time(ticks, TimeDisplayFormat.TIMECODE, frame_rate=24)
+        == "00:00:01:12"
+    )
+    assert format_media_time(ticks, TimeDisplayFormat.TICKS) == "135000"
+
+
+def test_episode_intervals_expose_gaps_conflicts_and_out_of_bounds(
+    qtbot: QtBot,
+) -> None:
+    timeline = TimelineView()
+    qtbot.addWidget(timeline)
+    timeline.show_playlist(
+        _playlist(), item_label="Item", chapter_label="Chapter", empty_text="Empty"
+    )
+    timeline.set_episodes(
+        (
+            TimelineEpisode(
+                "episode-1",
+                "01.ass",
+                90_000,
+                360_000,
+                90_000,
+                405_000,
+            ),
+            TimelineEpisode(
+                "episode-2",
+                "02.ass",
+                450_000,
+                720_000,
+                360_000,
+                990_000,
+                confidence="low",
+            ),
+        )
+    )
+
+    assert timeline.unmapped_intervals == (
+        (0, 90_000),
+        (360_000, 450_000),
+        (720_000, 900_000),
+    )
+    assert timeline.conflicting_episode_ids == frozenset(
+        {"episode-1", "episode-2"}
+    )
+    assert any(
+        "exceeds playlist bounds" in item.toolTip()
+        for item in timeline.scene().items()
+    )
+
+
+def test_candidate_snapping_is_deterministic_and_can_be_disabled(
+    qtbot: QtBot,
+) -> None:
+    timeline = TimelineView()
+    qtbot.addWidget(timeline)
+    timeline.show_playlist(
+        _playlist(), item_label="Item", chapter_label="Chapter", empty_text="Empty"
+    )
+    timeline.set_candidate_boundaries(
+        (
+            boundary(
+                "chapter:2",
+                360_000,
+                BoundarySource(BoundaryKind.CHAPTER, "2"),
+            ),
+            boundary(
+                "play-item:1:end",
+                540_000,
+                BoundarySource(BoundaryKind.PLAY_ITEM_END, "1"),
+            ),
+        )
+    )
+
+    assert timeline.snap_time(400_000) == (360_000, "chapter:2")
+    assert timeline.snap_time(400_000, disabled=True) == (400_000, None)

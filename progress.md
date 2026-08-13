@@ -18,10 +18,17 @@
 
 ### CLI、GUI 与 M6 验收
 - **状态：** in_progress
+- 工作模型已更新：本机禁止构建、测试、lint、类型检查、依赖安装和打包；仅允许源码检查、静态搜索、Git 操作与 `git diff --check`，所有执行型验证只走 GitHub Actions。
+- Git/GitHub 操作继续调用本机现有凭据，不通过浏览器重新登录；当前仓库远端为 `git@github.com:YuSaZh/BDSubMerge.git`。
+- 本机只有 Python 3.14.7，缺少项目要求的 Python 3.12 以及 pytest、Ruff、Mypy、build 和 PyInstaller；不新增本机环境，本批继续由 GitHub Actions 验证。
 - CLI、双语 PySide6 工作区、项目打开/保存、用户边界、AC-01 至 AC-10 测试正在合并。
 - 已为同刻用户/自动边界补充持久化锁 ID 规范化，避免项目恢复时锁引用失效。
 - 已补齐真实 Shinya MPLS 契约、AC-01 至 AC-10 直接验收、五种 GUI 输出策略与
   自定义目录/模板控件。
+- 当前 GUI 批次已实现字幕目录递归导入、自然排序与手动顺序恢复，逐集边界下拉、
+  时间线双向选择与拖动锁定、陈旧预检隔离、映射重置、三种时间显示、区间冲突/
+  超界/未映射展示，以及多输出目标和可选合并报告配置；已补对应 UI/单元测试，
+  等待 GitHub Actions 验证。
 - 远程 Windows CI 将建立临时 SMB 共享做真实 UNC 原子写入；Windows 打包将验证
   中文路径、无 Python PATH 启动、Shinya/pysubs2 导入及许可证材料。
 - 下一步统一推送，由 GitHub Actions 验证 CLI/UI/acceptance 与无头截图。
@@ -57,6 +64,7 @@
 | 31664097386 | Windows Package | onedir、许可证、ZIP/SHA 与无 Python GUI 烟测全部通过 | pass |
 | 31665015857 | 完整 CI | 协作取消链路在 Ubuntu/Windows、真实 UNC 与源码包全部通过 | pass |
 | 31665235086 | 完整 CI | 重定位/展示模型源码包通过；Ubuntu/Windows 同在 Ruff 阶段失败，日志权限受限 | fail |
+| 31665885218 | 完整 CI | `1ca58d6` 的 Ubuntu/Windows Ruff、Mypy、Pytest、真实 UNC 与源码包全部通过 | pass |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
