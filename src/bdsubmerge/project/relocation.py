@@ -26,7 +26,7 @@ class ProjectSourceRelocationError(ValueError):
     """A requested source relocation is invalid or unsafe."""
 
 
-class RelocationConfirmationRequired(ProjectSourceRelocationError):
+class RelocationConfirmationRequiredError(ProjectSourceRelocationError):
     """The selected source changed and requires explicit confirmation."""
 
 
@@ -128,7 +128,7 @@ class ProjectSourceRelocationService:
         except OSError as error:
             raise ProjectSourceRelocationError(str(error)) from error
         if candidate.requires_confirmation and not request.confirm_changed_source:
-            raise RelocationConfirmationRequired(
+            raise RelocationConfirmationRequiredError(
                 f"source {request.source_id!r} does not match its saved fingerprint"
             )
         relocated = relocate_source(

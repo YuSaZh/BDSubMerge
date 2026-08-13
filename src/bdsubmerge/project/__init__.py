@@ -41,7 +41,7 @@ from .relocation import (
     RelocateProjectSourceRequest,
     RelocateProjectSourceResult,
     RelocationCandidate,
-    RelocationConfirmationRequired,
+    RelocationConfirmationRequiredError,
 )
 from .schema import (
     CURRENT_SCHEMA_VERSION,
@@ -81,7 +81,7 @@ __all__ = [
     "RelocateProjectSourceRequest",
     "RelocateProjectSourceResult",
     "RelocationCandidate",
-    "RelocationConfirmationRequired",
+    "RelocationConfirmationRequiredError",
     "RestoredProject",
     "SourceCheck",
     "SourceState",
