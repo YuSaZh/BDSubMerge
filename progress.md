@@ -65,6 +65,7 @@
 | 31665015857 | 完整 CI | 协作取消链路在 Ubuntu/Windows、真实 UNC 与源码包全部通过 | pass |
 | 31665235086 | 完整 CI | 重定位/展示模型源码包通过；Ubuntu/Windows 同在 Ruff 阶段失败，日志权限受限 | fail |
 | 31665885218 | 完整 CI | `1ca58d6` 的 Ubuntu/Windows Ruff、Mypy、Pytest、真实 UNC 与源码包全部通过 | pass |
+| 31667939630 | 完整 CI | `62b9e06` 源码包通过；Ubuntu/Windows 均仅在 `application.__all__` 的 RUF022 排序诊断处停止 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -86,6 +87,7 @@
 | 许可证 Base64 转补丁 | 编排环境无 `atob`，随后低输出预算截断 Base64 | 改用 GitHub raw media type并提高单次读取预算，正文通过 `apply_patch` 写入 |
 | Package GUI 退出码 | 直接调用 `--windowed` EXE 后 `$LASTEXITCODE` 为空，门禁误判 | 使用 `Start-Process -Wait -PassThru` 读取真实 `ExitCode` |
 | Ruff 失败日志权限 | `gh run view --log-failed` 返回 403，check annotations 只有退出码 | 将 Ruff 输出设为 GitHub annotations，下一轮直接暴露文件、行号和规则 |
+| GUI 批次导出排序 | run `31667939630` 两平台均报告 `application.__all__` 的 RUF022 | 将新增全大写常量导出归入现有常量分组后重新推送验证 |
 
 ## 五问重启检查
 | 问题 | 答案 |

@@ -49,6 +49,7 @@ from .subtitle_discovery import (
 
 __all__ = [
     "JRIVER_INCOMPATIBLE_WARNING",
+    "SUPPORTED_SUBTITLE_SUFFIXES",
     "ApplicationIssue",
     "ApplicationSeverity",
     "BdmvApplicationService",
@@ -75,7 +76,6 @@ __all__ = [
     "ReportStyleRename",
     "ScanRequest",
     "ScanResult",
-    "SUPPORTED_SUBTITLE_SUFFIXES",
     "SubtitleApplicationService",
     "SubtitleAsset",
     "SubtitleInput",
