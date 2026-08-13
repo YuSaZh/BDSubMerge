@@ -25,6 +25,10 @@
 - 远程 Windows CI 将建立临时 SMB 共享做真实 UNC 原子写入；Windows 打包将验证
   中文路径、无 Python PATH 启动、Shinya/pysubs2 导入及许可证材料。
 - 下一步统一推送，由 GitHub Actions 验证 CLI/UI/acceptance 与无头截图。
+- run `31630779273` 显示 source distribution 成功，Ubuntu/Windows 均在相同 16 项
+  Ruff 诊断处停止；已逐项修复并以提交 `f8c0552` 推送。
+- run `31659484298` 将 Ruff 诊断从 16 项缩小为 2 项确定性排序问题；修复后继续
+  由远程验证 Mypy、Pytest、UNC 和 UI 截图。
 
 ## 远程测试结果
 | GitHub run | 平台/任务 | 实际结果 | 状态 |
@@ -34,6 +38,10 @@
 | 31624497128 | Windows | 安装依赖中 | running |
 | 31624497128 | Windows 最终结果 | Ruff、Mypy、64 项测试通过 | pass |
 | 31627068738 | Ubuntu、Windows、Source distribution | M5 核心全任务通过 | pass |
+| 31630779273 | Source distribution | 构建及双语 wheel 资源检查成功 | pass |
+| 31630779273 | Ubuntu、Windows | 相同 16 项 Ruff 诊断，后续步骤跳过 | fail |
+| 31659484298 | Source distribution | 构建及双语 wheel 资源检查成功 | pass |
+| 31659484298 | Ubuntu、Windows | Ruff 剩余 2 项排序诊断，后续步骤跳过 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -43,6 +51,7 @@
 | 静态搜索 | PowerShell 下向 `rg` 传递文件名通配符触发 Windows 路径错误 | 改用目录参数加 `--glob` 过滤 |
 | 外部资料查询 | 搜索工具返回 HTTP 500 | 不重复请求；保留任务书语义，等待真实夹具契约测试 |
 | Qt 许可旧链接 | 官方义务页面旧 URL 返回 404 | 改用 Qt for Python 官方 licenses 页面与有效源码目录 |
+| Git push 超时 | 沙箱 OpenSSH 读取 `CodexSandboxOnline` 的 known_hosts | 显式使用 Hanam 本机 SSH config/known_hosts，提交 `f8c0552` 推送成功 |
 
 ## 五问重启检查
 | 问题 | 答案 |

@@ -37,3 +37,10 @@
 
 ## 外部状态
 - GitHub Actions run `31627068738`：M5 核心在 Windows、Ubuntu 与 source distribution 全部成功。
+- GitHub Actions run `31630779273`：source distribution 成功；Ubuntu 与 Windows
+  均只在 Ruff 阶段因同一组 16 项诊断失败，后续 Mypy、Pytest 和 UI 截图未执行。
+- Ruff 修复提交 `f8c0552` 已推送；run `31659484298` 将诊断缩小为 2 项
+  确定性排序问题，两个平台结果一致。
+- Codex 沙箱的 Windows OpenSSH 默认解析到 `C:\Users\CodexSandboxOnline\.ssh`，会导致
+  GitHub 主机密钥校验失败。Git 操作必须显式使用 `C:\Users\Hanam\.ssh\config` 和
+  `C:\Users\Hanam\.ssh\known_hosts`，从而调用用户现有 SSH 凭据。
