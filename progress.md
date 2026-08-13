@@ -44,6 +44,8 @@
 | 31659484298 | Ubuntu、Windows | Ruff 剩余 2 项排序诊断，后续步骤跳过 | fail |
 | 31659898600 | Source distribution、Ubuntu/Windows Ruff | 构建和 Ruff 全部通过 | pass |
 | 31659898600 | Ubuntu、Windows Mypy | 相同 6 项严格类型诊断，后续步骤跳过 | fail |
+| 31660360425 | Source distribution、Ruff、Mypy、Windows SMB 建立 | 全部通过 | pass |
+| 31660360425 | Ubuntu、Windows Pytest | 161 通过、2 失败、2 跳过；覆盖率 78.10% | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -55,6 +57,7 @@
 | Qt 许可旧链接 | 官方义务页面旧 URL 返回 404 | 改用 Qt for Python 官方 licenses 页面与有效源码目录 |
 | Git push 超时 | 沙箱 OpenSSH 读取 `CodexSandboxOnline` 的 known_hosts | 显式使用 Hanam 本机 SSH config/known_hosts，提交 `f8c0552` 推送成功 |
 | M6 严格类型 | 两个平台在 UI/CLI 发现相同 6 项 Mypy 错误 | 按真实模型字段和 Qt/argparse 状态显式收窄，继续远程验证 |
+| AC-06 路径恢复 | 相对路径拼接保留词法 `..`，恢复状态与原状态不相等 | 对输入/输出恢复路径做不访问文件系统的词法规范化 |
 
 ## 五问重启检查
 | 问题 | 答案 |

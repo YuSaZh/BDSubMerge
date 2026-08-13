@@ -7,6 +7,7 @@ Release artifacts must include the license text required by every bundled depend
 | --- | --- | --- | --- |
 | Shinya | MPLS parser adapter | MIT | https://github.com/shimamura-hougetsu/shinya |
 | pysubs2 | Declared text subtitle dependency | MIT | https://github.com/tkarabela/pysubs2 |
+| lxml and its bundled XML libraries | Transitive Shinya dependency included in the Windows package | BSD-3-Clause and component licenses | https://lxml.de/ |
 | BluraySubtitle | Functional reference only; no copied code | MIT | https://github.com/Haruite/BluraySubtitle |
 | PySide6 / Qt for Python | Desktop UI | LGPLv3/GPLv3/commercial | https://doc.qt.io/qtforpython-6/licenses.html |
 | PyInstaller | Windows packaging | GPLv2 with bootloader exception | https://pyinstaller.org/ |
@@ -16,5 +17,6 @@ Shinya `0.2a1` is verified against upstream commit
 this repository. Its MIT notice is retained because it is a requirements-level reference.
 
 The Windows onedir artifact keeps Qt shared libraries separate from the executable. Its
-`LICENSES` directory contains the license files extracted from the exact bundled wheels,
-the Python runtime license, and Qt source acquisition information for the bundled version.
+`LICENSES` directory preserves the license-file paths extracted from the exact bundled wheels,
+including lxml's notices for bundled XML libraries, plus the Python runtime license and Qt
+source acquisition information for the bundled version.

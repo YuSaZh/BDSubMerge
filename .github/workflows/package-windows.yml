@@ -16,7 +16,36 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          architecture: x64
           cache: pip
+      - name: Verify release tag and architecture
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if (-not [Environment]::Is64BitProcess) {
+            throw 'The Windows package must be built by a 64-bit Python process'
+          }
+          $semver = '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$'
+          if ($env:TAG_NAME -cnotmatch $semver) {
+            throw "Release tag is not SemVer: $env:TAG_NAME"
+          }
+          $projectVersion = python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to read the project version from pyproject.toml'
+          }
+          $projectVersion = "$projectVersion".Trim()
+          if ($env:TAG_NAME.Substring(1) -cne $projectVersion) {
+            throw "Release tag $env:TAG_NAME does not match project version $projectVersion"
+          }
+      - name: Verify manual build architecture
+        if: github.ref_type != 'tag'
+        shell: pwsh
+        run: |
+          if (-not [Environment]::Is64BitProcess) {
+            throw 'The Windows package must be built by a 64-bit Python process'
+          }
       - name: Install project
         run: >-
           python -m pip install --upgrade pip &&
@@ -29,34 +58,7 @@ jobs:
           --collect-all shinya
           --collect-all pysubs2
           src/bdsubmerge/app.py
-      - name: Verify packaged translation resources
-        shell: pwsh
-        run: |
-          $required = @(
-            'dist/BDSubMerge/_internal/bdsubmerge/resources/i18n/en_US.json',
-            'dist/BDSubMerge/_internal/bdsubmerge/resources/i18n/zh_CN.json'
-          )
-          foreach ($path in $required) {
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-              throw "Packaged resource is missing: $path"
-            }
-          }
-      - name: Smoke-test packaged GUI
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          $smokeRoot = Join-Path $env:RUNNER_TEMP '无 Python 环境'
-          New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
-          Copy-Item -Recurse dist/BDSubMerge (Join-Path $smokeRoot 'BDSubMerge')
-          $env:PYTHONHOME = $null
-          $env:PYTHONPATH = $null
-          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-          & (Join-Path $smokeRoot 'BDSubMerge/BDSubMerge.exe') --smoke-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "Packaged GUI smoke test failed with exit code $LASTEXITCODE"
-          }
-      - name: Include notices
+      - name: Include project and upstream notices
         shell: pwsh
         run: |
           Copy-Item LICENSE,THIRD_PARTY_NOTICES.md -Destination dist/BDSubMerge
@@ -66,6 +68,7 @@ jobs:
         shell: python
         run: |
           import importlib.metadata as metadata
+          import json
           import pathlib
           import shutil
           import sys
@@ -77,50 +80,200 @@ jobs:
               "PySide6_Addons",
               "shiboken6",
               "PyInstaller",
+              "lxml",
           )
+          manifest: dict[str, object] = {}
           for name in distributions:
               distribution = metadata.distribution(name)
-              candidates = [
-                  file for file in distribution.files or ()
-                  if file.name.lower().startswith(("license", "copying"))
-                  or any(part.lower().startswith("license") for part in file.parts)
-              ]
-              if not candidates:
-                  raise SystemExit(f"no license file found in {name}")
+              candidates = sorted(
+                  (
+                      file
+                      for file in distribution.files or ()
+                      if file.name.casefold().startswith(("license", "copying", "notice"))
+                      or any(
+                          part.casefold().startswith(("license", "copying"))
+                          for part in file.parts
+                      )
+                  ),
+                  key=lambda file: str(file).casefold(),
+              )
+              copied: list[str] = []
               target = destination / name
-              target.mkdir(parents=True, exist_ok=True)
               for candidate in candidates:
+                  relative = pathlib.PurePosixPath(str(candidate).replace("\\", "/"))
+                  if relative.is_absolute() or ".." in relative.parts:
+                      raise SystemExit(f"unsafe license path in {name}: {candidate}")
                   source = pathlib.Path(distribution.locate_file(candidate))
-                  shutil.copy2(source, target / candidate.name)
+                  if not source.is_file():
+                      continue
+                  output = target.joinpath(*relative.parts)
+                  if output.exists():
+                      raise SystemExit(f"duplicate license destination in {name}: {relative}")
+                  output.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(source, output)
+                  copied.append(output.relative_to(destination).as_posix())
+              if not copied:
+                  raise SystemExit(f"no license file found in {name}")
+              manifest[name] = {
+                  "distribution": distribution.metadata["Name"],
+                  "version": distribution.version,
+                  "files": copied,
+              }
           python_license = pathlib.Path(sys.base_prefix) / "LICENSE.txt"
           if not python_license.is_file():
               raise SystemExit(f"Python license is missing: {python_license}")
           shutil.copy2(python_license, destination / "PYTHON.txt")
-      - name: Verify release licenses and bundled adapters
+          (destination / "installed-distributions.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+      - name: Verify final package contents and licenses
         shell: pwsh
         run: |
           $required = @(
+            'dist/BDSubMerge/BDSubMerge.exe',
+            'dist/BDSubMerge/_internal/bdsubmerge/resources/i18n/en_US.json',
+            'dist/BDSubMerge/_internal/bdsubmerge/resources/i18n/zh_CN.json',
             'dist/BDSubMerge/LICENSE',
             'dist/BDSubMerge/THIRD_PARTY_NOTICES.md',
             'dist/BDSubMerge/LICENSES/SHINYA.txt',
             'dist/BDSubMerge/LICENSES/PYSUBS2.txt',
             'dist/BDSubMerge/LICENSES/BLURAY_SUBTITLE.txt',
             'dist/BDSubMerge/LICENSES/QT_SOURCE_OFFER.txt',
-            'dist/BDSubMerge/LICENSES/PYTHON.txt'
+            'dist/BDSubMerge/LICENSES/PYTHON.txt',
+            'dist/BDSubMerge/LICENSES/installed-distributions.json'
           )
           foreach ($path in $required) {
             if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-              throw "Release license is missing: $path"
+              throw "Release file is missing: $path"
             }
           }
-          if (-not (Get-ChildItem dist/BDSubMerge/LICENSES/PySide6* -Recurse -File)) {
-            throw 'PySide6/Qt license files are missing'
+          $distributions = @(
+            'PySide6',
+            'PySide6_Essentials',
+            'PySide6_Addons',
+            'shiboken6',
+            'PyInstaller',
+            'lxml'
+          )
+          foreach ($distribution in $distributions) {
+            $path = Join-Path 'dist/BDSubMerge/LICENSES' $distribution
+            if (-not (Get-ChildItem -LiteralPath $path -Recurse -File)) {
+              throw "Installed dependency license files are missing: $distribution"
+            }
           }
-          if (-not (Get-ChildItem dist/BDSubMerge/LICENSES/PySide6* `
-              -Recurse -File -Filter '*LGPL*')) {
+          $qtLicenses = Get-ChildItem -Path 'dist/BDSubMerge/LICENSES/PySide6*' `
+            -Recurse -File
+          if (-not ($qtLicenses | Where-Object Name -Like '*LGPL*')) {
             throw 'Qt LGPL license text is missing'
+          }
+      - name: Create ZIP and SHA256
+        shell: pwsh
+        run: |
+          $zipName = 'BDSubMerge-windows-x64.zip'
+          $zipPath = Join-Path dist $zipName
+          Push-Location dist
+          try {
+            Compress-Archive -LiteralPath BDSubMerge -DestinationPath $zipName
+          } finally {
+            Pop-Location
+          }
+          $checksum = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$zipPath.sha256" `
+            -Value "$checksum  $zipName" -Encoding ascii
+      - name: Smoke-test final archive without Python
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $smokeRoot = Join-Path $env:RUNNER_TEMP 'BDSubMerge 最终包 无 Python'
+          $workingDirectory = Join-Path $smokeRoot '运行工作目录'
+          New-Item -ItemType Directory -Force -Path $smokeRoot,$workingDirectory | Out-Null
+          Expand-Archive -LiteralPath dist/BDSubMerge-windows-x64.zip `
+            -DestinationPath $smokeRoot
+          $executable = Join-Path $smokeRoot 'BDSubMerge/BDSubMerge.exe'
+          if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+            throw "Packaged executable is missing after extraction: $executable"
+          }
+          $env:PYTHONHOME = $null
+          $env:PYTHONPATH = $null
+          $env:PYTHONNOUSERSITE = '1'
+          $env:VIRTUAL_ENV = $null
+          $env:CONDA_PREFIX = $null
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          Push-Location $workingDirectory
+          try {
+            & $executable --smoke-test
+            if ($LASTEXITCODE -ne 0) {
+              throw "Packaged GUI and adapter smoke test failed with exit code $LASTEXITCODE"
+            }
+          } finally {
+            Pop-Location
+          }
+      - name: Verify release checksum
+        shell: pwsh
+        run: |
+          $zipPath = 'dist/BDSubMerge-windows-x64.zip'
+          $checksumPath = "$zipPath.sha256"
+          $expected = ((Get-Content -LiteralPath $checksumPath -Raw) -split '\s+')[0]
+          $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
+          if ($actual -cne $expected.ToUpperInvariant()) {
+            throw "SHA256 mismatch: expected $expected, got $actual"
           }
       - uses: actions/upload-artifact@v7
         with:
           name: BDSubMerge-windows-x64
-          path: dist/BDSubMerge
+          path: |
+            dist/BDSubMerge-windows-x64.zip
+            dist/BDSubMerge-windows-x64.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: BDSubMerge-windows-x64
+          path: release-files
+      - name: Verify downloaded release files
+        working-directory: release-files
+        run: sha256sum --check BDSubMerge-windows-x64.zip.sha256
+      - name: Require successful CI for the release commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          successful_runs="$(gh api \
+            "repos/$GH_REPO/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=completed&per_page=100" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')"
+          if [[ "$successful_runs" -lt 1 ]]; then
+            echo "No successful CI run exists for release commit $GITHUB_SHA" >&2
+            exit 1
+          fi
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          release_flags=(
+            --verify-tag
+            --generate-notes
+            --title "BDSubMerge ${GITHUB_REF_NAME#v}"
+          )
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            "${release_flags[@]}" \
+            release-files/BDSubMerge-windows-x64.zip \
+            release-files/BDSubMerge-windows-x64.zip.sha256
