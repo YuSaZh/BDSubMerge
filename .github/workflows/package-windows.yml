@@ -164,7 +164,11 @@ jobs:
           }
           $qtLicenses = Get-ChildItem -Path 'dist/BDSubMerge/LICENSES/PySide6*' `
             -Recurse -File
-          if (-not ($qtLicenses | Where-Object Name -Like '*LGPL*')) {
+          $hasLgplText = $qtLicenses | Where-Object {
+            Select-String -LiteralPath $_.FullName `
+              -Pattern 'GNU LESSER GENERAL PUBLIC LICENSE' -SimpleMatch -Quiet
+          }
+          if (-not $hasLgplText) {
             throw 'Qt LGPL license text is missing'
           }
       - name: Create ZIP and SHA256

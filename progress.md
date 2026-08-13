@@ -46,6 +46,10 @@
 | 31659898600 | Ubuntu、Windows Mypy | 相同 6 项严格类型诊断，后续步骤跳过 | fail |
 | 31660360425 | Source distribution、Ruff、Mypy、Windows SMB 建立 | 全部通过 | pass |
 | 31660360425 | Ubuntu、Windows Pytest | 161 通过、2 失败、2 跳过；覆盖率 78.10% | fail |
+| 31662574227 | Source distribution、Ubuntu/Windows Ruff | 全部通过 | pass |
+| 31662574227 | Ubuntu、Windows Mypy | 运行日志路径局部变量类型冲突，4 项同源诊断 | fail |
+| 31662716282 | 完整 CI | `bc79a73` 类型修复后全平台 CI 与真实 Windows UNC 验收通过 | pass |
+| 31662921037 | Windows Package | onedir 构建与依赖许可证收集通过；Qt LGPL 文件名门禁误判，ZIP 前停止 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -58,6 +62,10 @@
 | Git push 超时 | 沙箱 OpenSSH 读取 `CodexSandboxOnline` 的 known_hosts | 显式使用 Hanam 本机 SSH config/known_hosts，提交 `f8c0552` 推送成功 |
 | M6 严格类型 | 两个平台在 UI/CLI 发现相同 6 项 Mypy 错误 | 按真实模型字段和 Qt/argparse 状态显式收窄，继续远程验证 |
 | AC-06 路径恢复 | 相对路径拼接保留词法 `..`，恢复状态与原状态不相等 | 对输入/输出恢复路径做不访问文件系统的词法规范化 |
+| 运行日志路径类型 | Windows base 字符串与 Unix Path 复用同名变量导致 Mypy 冲突 | 拆分平台局部变量，提交 `bc79a73` 推送远程验证 |
+| Package Qt 许可门禁 | 已收集许可文件，但仅按 `*LGPL*` 文件名匹配导致误判 | 改为在已收集 PySide6 许可文本中验证 LGPL 正文标题 |
+| 恢复状态并行查询 | 一个无匹配项使整组查询退出，未返回可用状态 | 拆分关键查询并对可选搜索独立处理 |
+| 许可证脚本路径假设 | 假定存在独立 `scripts/collect_dependency_licenses.py` | 读取真实工作流，确认收集逻辑内嵌在 YAML |
 
 ## 五问重启检查
 | 问题 | 答案 |
