@@ -70,6 +70,8 @@
 | 31667939630 | 完整 CI | `62b9e06` 源码包通过；Ubuntu/Windows 均仅在 `application.__all__` 的 RUF022 排序诊断处停止 | fail |
 | 31668089029 | 完整 CI | `fdfddf9` 源码包及双平台 Ruff 通过；双平台 Mypy 同在 3 处类型收窄失败，Pytest 未运行 | fail |
 | 31669097224 | 完整 CI | `bca41f6` 源码包、Ubuntu/Windows Ruff/Mypy/Pytest 与真实 UNC 全部通过 | pass |
+| 31674632907 | 完整 CI | `04e4e32` 源码包成功；双平台 Ruff 同报 2 项，后续步骤跳过 | fail |
+| 31674853072 | 完整 CI | `f5c1a38` 源码包、双平台 Ruff/Mypy、Windows SMB/UNC 通过；双平台同一 GUI 测试替身契约失败，截图跳过 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -106,6 +108,7 @@
 | 原子写入模块路径假设 | 假定实现位于 `output/atomic.py`，只读查询因文件不存在中断 | 先用 `rg --files src/bdsubmerge/output` 定位真实模块后再审计 |
 | 进度审计合并模块路径 | 假定 ASS/SRT/SUP 各有独立合并模块，三个只读读取失败 | `rg --files` 确认文本合并集中于 `merge/engine.py`，SUP 集中于 `subtitles/pgs_adapter.py` |
 | 进度批次远程 Ruff | run `31674632907` 两平台同报 `SubtitleInput` F821 与 `os.path.abspath` PTH100 | 补应用模型导入，改用不解引用的 `Path.absolute()` 保留路径错误隔离语义 |
+| 进度批次远程 Pytest | run `31674853072` 两平台同一 GUI 测试替身不接受新增 `cancellation_check` 关键字 | 同步两处 `load_ordered` 测试替身与应用服务接口，继续远程验证 |
 
 ### UI 截图发布证据
 - **状态：** complete
@@ -138,6 +141,7 @@
 - 已修复项目打开的两阶段提交边界：新扫描成功后清除旧项目关联，仅在字幕完整恢复成功后绑定新项目文件；业务失败与线程失败都保持正确终态。
 - 已补目录自然排序命名矩阵、取消、错误隔离、进度桥接、重复导入和项目恢复状态机的远程测试代码；本地未执行测试、lint、类型检查或构建。
 - 已把当前文件进度扩展到 MPLS 扫描、预检、ASS/SRT/SUP 合并和多目标原子写入，并补框架无关的进度契约测试；实现完成，等待 GitHub Actions 验证。
+- 提交 `f5c1a38` 的 run `31674853072` 已通过源码包、双平台 Ruff/Mypy 和 Windows SMB/UNC；唯一失败是 GUI 测试替身没有同步应用服务新增的取消参数，现已同时修正两处同类替身，等待下一轮远程验证。
 
 ## 五问重启检查
 | 问题 | 答案 |

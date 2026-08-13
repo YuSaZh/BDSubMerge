@@ -32,6 +32,7 @@
 - 当前未提交批次还把目录拖放的字幕发现移入应用服务，并新增项目扫描失败处理；现有 `tests/` 尚无对应未提交变化，必须补足服务、取消、进度和 GUI 回归测试后才能推送验证。
 - 静态审计确认 `application/display_models.py` 已有播放列表结构和字幕详情投影，但 GUI 未调用；预检摘要也只显示路径和 issue，未显示任务书要求的预计事件数、样式数和警告摘要。阶段 5 对这三项的完成标记已撤回。
 - 新项目打开必须两阶段提交：扫描失败时旧工作区和旧 `project_path` 均保留；扫描成功即解除旧项目关联；只有字幕恢复完整成功才绑定新项目路径，后续失败或缺失时强制另存为。
+- run `31674853072` 的源码包、Ubuntu/Windows Ruff 与 Mypy 均通过；两平台 Pytest 唯一失败均为 `test_adding_directory_preserves_manual_order_and_appends_naturally` 的 `load_ordered` 测试替身未接受新增 `cancellation_check` 关键字。Ubuntu 为 254 项中 1 失败、2 跳过，Windows 为 254 项中 1 失败；Windows 真实 SMB/UNC 建立和清理正常，截图因 Pytest 失败而跳过。
 
 ## 技术决策
 | 决策 | 理由 |

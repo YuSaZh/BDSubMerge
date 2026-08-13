@@ -18,6 +18,7 @@ from bdsubmerge.application import (
     SubtitleAsset,
     SubtitleInput,
 )
+from bdsubmerge.cancellation import CancellationCheck
 from bdsubmerge.domain.models import (
     BdmvLayout,
     PlayItemInfo,
@@ -889,7 +890,12 @@ def test_adding_directory_preserves_manual_order_and_appends_naturally(
     window.mapping_table.item(1, 0).setData(Qt.ItemDataRole.UserRole, first_path)
     requests: list[LoadSubtitlesRequest] = []
 
-    def load_ordered(request: LoadSubtitlesRequest) -> LoadSubtitlesResult:
+    def load_ordered(
+        request: LoadSubtitlesRequest,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> LoadSubtitlesResult:
+        del cancellation_check
         requests.append(request)
         return LoadSubtitlesResult(
             tuple(assets[source.path] for source in request.sources),
@@ -951,7 +957,12 @@ def test_project_restore_uses_saved_subtitle_order_and_encoding(
     }
     requests: list[LoadSubtitlesRequest] = []
 
-    def load_ordered(request: LoadSubtitlesRequest) -> LoadSubtitlesResult:
+    def load_ordered(
+        request: LoadSubtitlesRequest,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> LoadSubtitlesResult:
+        del cancellation_check
         requests.append(request)
         return LoadSubtitlesResult(
             tuple(assets[source.path] for source in request.sources),
