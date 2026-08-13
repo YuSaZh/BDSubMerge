@@ -50,6 +50,7 @@
 - `615d955` 的绿灯只证明 GUI 在调用 execute 前询问；共享 `MergeApplicationService.execute()` 尚未强制确认，CLI 也曾静默传入低置信度接受标志。门禁必须下沉到应用服务，并由 GUI 确认结果和 CLI `--accept-warnings` 显式穿透，才能满足分层契约且不可被其他调用者绕过。
 - 共享 warning 门禁批次的主路径已静态确认：`prepare()` 汇总 playlist、subtitle、低置信度、merge 与 output warning，`execute()` 仅在真实写入且 warning 未接受时返回 `warnings_not_accepted`，dry-run 保持零写入成功。全部 `ExecuteMergeRequest` 调用已逐项核对：overwrite、SUP 估算与低置信度接受分支显式确认；AC-06 的 auto-rename 仅产生 info，保持默认拒绝 warning 并新增严重度回归断言。
 - 共享 prepare 接管 playlist/subtitle warning 后，CLI 成功路径仍同时拼接 scan/inspect/subtitle preliminary issues，可能让同一诊断重复出现；CLI 最终汇总现按完整 `CliIssue` 保序去重，既保留 scan 独有诊断，也避免 validate 和 merge dry-run 重复展示。
+- commit `8fd25a7` / run `31685081960` 已闭环共享 warning 门禁：源码包、双平台 Ruff/Mypy/Pytest、Windows 真实 UNC 和 Linux 四态截图矩阵全部通过。JUnit 为 Ubuntu 288 项（2 skipped）和 Windows 288 项，coverage XML 行覆盖率为 87.54%/87.52%；artifacts `9175097451`、`9175090247`、`9175089638`、`9175057242` 均完整，四张截图哈希互异且目视无重叠、截断或 CJK 缺字。
 
 ## 技术决策
 | 决策 | 理由 |
