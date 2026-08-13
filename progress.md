@@ -54,6 +54,9 @@
 | 31663324198 | Windows Package | wheel 元数据实际未提供 LGPL 正文；构建与依赖许可收集通过，ZIP 前停止 | fail |
 | 31663851504 | 完整 CI | `97f3ba4` 的 Ubuntu/Windows、真实 UNC 与源码包全部通过 | pass |
 | 31663862171 | Windows Package | 许可证、ZIP/SHA 均成功；GUI 子系统未设置 `$LASTEXITCODE` 被误判 | fail |
+| 31664097386 | Windows Package | onedir、许可证、ZIP/SHA 与无 Python GUI 烟测全部通过 | pass |
+| 31665015857 | 完整 CI | 协作取消链路在 Ubuntu/Windows、真实 UNC 与源码包全部通过 | pass |
+| 31665235086 | 完整 CI | 重定位/展示模型源码包通过；Ubuntu/Windows 同在 Ruff 阶段失败，日志权限受限 | fail |
 
 ## 错误日志
 | 阶段 | 错误 | 解决方案 |
@@ -74,6 +77,7 @@
 | 文件规划记录补丁 | 将 `progress.md` 的预期行误用于 `findings.md` 上下文 | 按两份文件各自结构拆分补丁 |
 | 许可证 Base64 转补丁 | 编排环境无 `atob`，随后低输出预算截断 Base64 | 改用 GitHub raw media type并提高单次读取预算，正文通过 `apply_patch` 写入 |
 | Package GUI 退出码 | 直接调用 `--windowed` EXE 后 `$LASTEXITCODE` 为空，门禁误判 | 使用 `Start-Process -Wait -PassThru` 读取真实 `ExitCode` |
+| Ruff 失败日志权限 | `gh run view --log-failed` 返回 403，check annotations 只有退出码 | 将 Ruff 输出设为 GitHub annotations，下一轮直接暴露文件、行号和规则 |
 
 ## 五问重启检查
 | 问题 | 答案 |

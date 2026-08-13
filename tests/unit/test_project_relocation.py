@@ -2,7 +2,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from test_project_persistence import sample_project
 
 from bdsubmerge.project.paths import fingerprint, snapshot_file, store_path
 from bdsubmerge.project.relocation import (
@@ -13,6 +12,7 @@ from bdsubmerge.project.relocation import (
     RelocationConfirmationRequired,
 )
 from bdsubmerge.project.schema import SourceState
+from test_project_persistence import sample_project
 
 
 def test_candidate_search_classifies_and_ranks_fingerprint_matches(
