@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -70,6 +71,9 @@ from bdsubmerge.application import (
     PlaylistSelectionResult,
     PreparedMerge,
     PrepareMergeRequest,
+    ProjectRestoreApplicationService,
+    ProjectRestoreRequest,
+    ProjectRestoreResult,
     ScanRequest,
     ScanResult,
     SubtitleApplicationService,
@@ -92,6 +96,7 @@ from bdsubmerge.mapping import (
     TimelineBoundary,
     boundary,
 )
+from bdsubmerge.merge import MergeOptions
 from bdsubmerge.output import (
     CollisionPolicy,
     DiscNameOutputTarget,
@@ -108,10 +113,16 @@ from bdsubmerge.project import (
     MappingSnapshot,
     OutputState,
     ProjectSchemaError,
+    ProjectSnapshot,
+    ProjectSourceRelocationError,
+    ProjectSourceRelocationService,
     ProjectState,
+    RelocateProjectSourceRequest,
+    RelocationConfirmationRequiredError,
     RestoredProject,
-    SourceState,
+    SourceCheck,
     SubtitleState,
+    restore_project_state,
 )
 from bdsubmerge.subtitles import SubtitleFormat
 
@@ -120,7 +131,13 @@ from .details import (
     format_playlist_details,
     format_subtitle_details,
 )
-from .project_io import capture_and_save, load_restored_project, qt_atomic_project_writer
+from .project_io import (
+    capture_and_save,
+    load_restored_project,
+    qt_atomic_project_writer,
+    save_project_atomically,
+)
+from .project_relocation import ProjectRelocationDialog
 from .tasks import CancellationToken, ServiceTask
 from .theme import ThemeMode, apply_theme
 from .timeline import (
@@ -196,6 +213,11 @@ class MainWindow(QMainWindow):
         self.bdmv_service = bdmv_service or BdmvApplicationService()
         self.subtitle_service = subtitle_service or SubtitleApplicationService()
         self.merge_service = merge_service or MergeApplicationService()
+        self.project_restore_service = ProjectRestoreApplicationService(
+            self.bdmv_service,
+            self.subtitle_service,
+            self.merge_service,
+        )
         self.settings = settings or QSettings()
         locale = str(self.settings.value("ui/language", "zh_CN"))
         self.translations = TranslationCatalog(locale)
@@ -216,12 +238,14 @@ class MainWindow(QMainWindow):
         self.mapping_preflight_timer = QTimer(self)
         self.mapping_preflight_timer.setSingleShot(True)
         self.project_path: Path | None = None
+        self.pending_project_snapshot: ProjectSnapshot | None = None
         self.pending_project_path: Path | None = None
         self.pending_project_previous_bdmv = ""
+        self.pending_project_relocated = False
         self.restored_mapping_locks: tuple[MappingLock, ...] = ()
         self.restored_mapping_snapshots: tuple[MappingSnapshot, ...] = ()
         self.pending_project: RestoredProject | None = None
-        self.pending_restore_after_scan = False
+        self.project_relocation_service = ProjectSourceRelocationService()
         self.pending_bdmv_scan_path: Path | None = None
         self.pending_import_bdmv_fallback = False
         self.subtitle_paths: list[Path] = []
@@ -245,6 +269,7 @@ class MainWindow(QMainWindow):
         self.task_failed = False
         self.task_cancelled = False
         self.details_dialog: ReadOnlyDetailsDialog | None = None
+        self.conflict_policy = ConflictPolicySnapshot()
 
         self.setAcceptDrops(True)
         self.setMinimumSize(980, 700)
@@ -477,11 +502,16 @@ class MainWindow(QMainWindow):
         advanced_layout = QHBoxLayout(self.advanced_panel)
         advanced_layout.setContentsMargins(20, 0, 0, 0)
         self.accept_low_confidence = QCheckBox()
+        self.accept_script_info_conflicts = QCheckBox()
+        acceptance_layout = QVBoxLayout()
+        acceptance_layout.setContentsMargins(0, 0, 0, 0)
+        acceptance_layout.addWidget(self.accept_low_confidence)
+        acceptance_layout.addWidget(self.accept_script_info_conflicts)
         self.offset_label = QLabel()
         self.offset_spin = QSpinBox()
         self.offset_spin.setRange(-3_600_000, 3_600_000)
         self.offset_spin.setSuffix(" ms")
-        advanced_layout.addWidget(self.accept_low_confidence)
+        advanced_layout.addLayout(acceptance_layout)
         advanced_layout.addWidget(self.offset_label)
         advanced_layout.addWidget(self.offset_spin)
         self.project_notes_label = QLabel()
@@ -613,6 +643,9 @@ class MainWindow(QMainWindow):
         )
         self.report_browse.clicked.connect(self.choose_report)
         self.accept_low_confidence.toggled.connect(self._invalidate_preflight)
+        self.accept_script_info_conflicts.toggled.connect(
+            self._script_info_policy_changed
+        )
         self.auto_map_button.clicked.connect(self.start_preflight)
         self.preflight_button.clicked.connect(self.start_preflight)
         self.generate_button.clicked.connect(self.start_generate)
@@ -761,6 +794,9 @@ class MainWindow(QMainWindow):
         self.details_button.setText(tr("details.show"))
         self.advanced_toggle.setText(tr("advanced.title"))
         self.accept_low_confidence.setText(tr("advanced.low_confidence"))
+        self.accept_script_info_conflicts.setText(
+            tr("advanced.accept_script_info_conflicts")
+        )
         self.offset_label.setText(tr("advanced.offset"))
         self.project_notes_label.setText(tr("project.notes"))
         self.settings_menu.setTitle(tr("settings.menu"))
@@ -826,7 +862,7 @@ class MainWindow(QMainWindow):
             lambda: self.bdmv_service.scan(request),
             self.translations.text("task.scanning"),
             self._scan_finished,
-            kind="project_scan" if self.pending_project is not None else "scan",
+            kind="scan",
         )
 
     def _scan_finished(self, value: object) -> None:
@@ -839,18 +875,7 @@ class MainWindow(QMainWindow):
         if not result.ready:
             self.task_failed = True
             self.task_status.setText(self.translations.text("task.failed"))
-        if self.pending_project is not None and not result.ready:
-            self._record_issues(result.issues)
-            self.path_edit.setText(self.pending_project_previous_bdmv)
-            self._discard_pending_project_restore()
-            self.statusBar().showMessage(
-                self.translations.text("status.project_incomplete"), 8000
-            )
-            self._update_actions()
-            return
-        if self.pending_project is not None:
-            self.project_path = None
-        elif (
+        if (
             self.project_path is not None
             and result.layout is not None
             and previous_bdmv_path != result.layout.bdmv_path
@@ -882,11 +907,7 @@ class MainWindow(QMainWindow):
                 self.playlist_table.setItem(row, column, item)
         self.playlist_table.setSortingEnabled(True)
         self._record_issues(result.issues)
-        selected_stem = (
-            self.pending_project.state.playlist_stem
-            if self.pending_project is not None
-            else result.playlists[0].stem if result.playlists else ""
-        )
+        selected_stem = result.playlists[0].stem if result.playlists else ""
         for row in range(self.playlist_table.rowCount()):
             selected_item = self.playlist_table.item(row, 0)
             if selected_item is not None and selected_item.text() == selected_stem:
@@ -897,9 +918,7 @@ class MainWindow(QMainWindow):
             self.translations.text("status.scan_complete", count=len(result.playlists)), 6000
         )
         self._update_actions()
-        if self.pending_project is not None:
-            self.pending_restore_after_scan = True
-        elif not result.playlists:
+        if not result.playlists:
             self._invalidate_preflight(preserve_mapping=False)
 
     @Slot()
@@ -1228,6 +1247,12 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def save_project(self) -> None:
+        if self.pending_project is not None:
+            self.statusBar().showMessage(
+                self.translations.text("status.project_relocation_pending"),
+                5000,
+            )
+            return
         if (
             self.selected_playlist is None
             or self.scan_result is None
@@ -1271,16 +1296,137 @@ class MainWindow(QMainWindow):
             return
         project_path = Path(chosen)
         try:
-            _, restored = load_restored_project(project_path)
+            snapshot, restored = load_restored_project(project_path)
         except (OSError, ProjectSchemaError, ValueError) as error:
             self._record_error(str(error))
             return
+        self.pending_project_snapshot = snapshot
         self.pending_project = restored
         self.pending_project_path = project_path
         self.pending_project_previous_bdmv = self.path_edit.text()
-        self._show_source_checks(restored)
-        self.path_edit.setText(str(restored.state.bdmv_path))
-        self.start_scan()
+        self.pending_project_relocated = False
+        if restored.has_changed_sources and not self._resolve_project_sources():
+            self._discard_pending_project_restore()
+            self._update_actions()
+            return
+        self._start_pending_project_restore()
+
+    def _resolve_project_sources(self) -> bool:
+        restored = self.pending_project
+        if restored is None:
+            return False
+        dialog = ProjectRelocationDialog(
+            restored,
+            tr=self.translations.text,
+            relocate=self._relocate_project_source,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted.value:
+            return False
+        self.pending_project = dialog.restored
+        return not dialog.restored.has_changed_sources
+
+    def _relocate_project_source(
+        self,
+        check: SourceCheck,
+    ) -> RestoredProject | None:
+        snapshot = self.pending_project_snapshot
+        project_path = self.pending_project_path
+        if snapshot is None or project_path is None:
+            return None
+        if check.id == "bdmv":
+            selected = QFileDialog.getExistingDirectory(
+                self,
+                self.translations.text("dialog.select_relocated_bdmv"),
+                str(check.path),
+            )
+        else:
+            selected, _ = QFileDialog.getOpenFileName(
+                self,
+                self.translations.text("dialog.select_relocated_file"),
+                str(check.path),
+                "All files (*)",
+            )
+        if not selected:
+            return None
+        request = RelocateProjectSourceRequest(
+            snapshot,
+            project_path,
+            check.id,
+            Path(selected),
+        )
+        try:
+            result = self.project_relocation_service.relocate(request)
+        except RelocationConfirmationRequiredError:
+            if not self._confirm_changed_project_source(check, Path(selected)):
+                return None
+            try:
+                result = self.project_relocation_service.relocate(
+                    replace(request, confirm_changed_source=True)
+                )
+            except (KeyError, OSError, ProjectSourceRelocationError) as error:
+                self._record_error(str(error))
+                return None
+        except (KeyError, OSError, ProjectSourceRelocationError) as error:
+            self._record_error(str(error))
+            return None
+        self.pending_project_snapshot = result.project
+        self.pending_project = result.restored
+        self.pending_project_relocated = True
+        return result.restored
+
+    def _confirm_changed_project_source(
+        self,
+        check: SourceCheck,
+        path: Path,
+    ) -> bool:
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setWindowTitle(
+            self.translations.text("confirm.relocation_changed.title")
+        )
+        dialog.setText(
+            self.translations.text(
+                "confirm.relocation_changed.message",
+                source=check.id,
+                path=path,
+            )
+        )
+        dialog.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        yes_button = dialog.button(QMessageBox.StandardButton.Yes)
+        no_button = dialog.button(QMessageBox.StandardButton.No)
+        if yes_button is not None:
+            yes_button.setText(self.translations.text("common.yes"))
+        if no_button is not None:
+            no_button.setText(self.translations.text("common.no"))
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        dialog.setEscapeButton(QMessageBox.StandardButton.No)
+        return dialog.exec() == QMessageBox.StandardButton.Yes.value
+
+    def _start_pending_project_restore(self) -> None:
+        snapshot = self.pending_project_snapshot
+        project_path = self.pending_project_path
+        restored = self.pending_project
+        if (
+            snapshot is None
+            or project_path is None
+            or restored is None
+            or restored.has_changed_sources
+        ):
+            return
+        request = ProjectRestoreRequest(
+            snapshot,
+            project_path,
+            accept_low_confidence=self.accept_low_confidence.isChecked(),
+        )
+        self._start_task(
+            lambda: self.project_restore_service.prepare(request),
+            self.translations.text("task.loading"),
+            self._project_restore_finished,
+            kind="project_restore",
+        )
 
     def _project_state(self) -> ProjectState:
         assert self.scan_result is not None and self.scan_result.layout is not None
@@ -1303,6 +1449,12 @@ class MainWindow(QMainWindow):
             )
             for index, asset in enumerate(self.subtitle_result.assets)
         )
+        conflict_policy = replace(
+            self.conflict_policy,
+            accept_script_info_conflicts=(
+                self.accept_script_info_conflicts.isChecked()
+            ),
+        )
         return ProjectState(
             bdmv_path=self.scan_result.layout.bdmv_path,
             index_bdmv_path=self.scan_result.layout.index_bdmv_path,
@@ -1314,7 +1466,7 @@ class MainWindow(QMainWindow):
             boundaries=boundaries,
             mappings=mappings,
             outputs=tuple(self.output_states),
-            conflict_policy=ConflictPolicySnapshot(),
+            conflict_policy=conflict_policy,
             ui_notes=self.project_notes.text(),
         )
 
@@ -1414,7 +1566,7 @@ class MainWindow(QMainWindow):
                     ),
                     manual_offset_90k=manual_offset_90k,
                     locked=(
-                        lock is not None
+                        snapshot.locked
                         or (path is not None and path in self.locked_subtitles)
                     ),
                 )
@@ -1436,67 +1588,105 @@ class MainWindow(QMainWindow):
         self._refresh_playlist_selection()
         self._invalidate_preflight()
 
-    def _continue_project_restore(self) -> None:
-        assert self.pending_project is not None
-        if self.selected_playlist is None:
-            self._discard_pending_project_restore()
-            self.statusBar().showMessage(
-                self.translations.text("status.project_incomplete"), 8000
-            )
-            return
-        state = self.pending_project.state
-        self.project_notes.setText(state.ui_notes)
-        self._restore_output_states(state.outputs)
-        user_boundaries = tuple(
-            (item.id, item.time_90k) for item in state.boundaries if item.user_created
-        )
-        self.timeline.set_user_boundaries(user_boundaries)
-        ordered_subtitles = tuple(sorted(state.subtitles, key=lambda item: item.order))
-        existing_subtitles = tuple(
-            item for item in ordered_subtitles if item.path.is_file()
-        )
-        self.subtitle_paths = [item.path for item in existing_subtitles]
-        self.subtitle_result = None
-        self.mapping_table.setRowCount(0)
-        self.locked_subtitles.clear()
-        self.subtitle_offsets_90k.clear()
-        self.restored_mapping_locks = ()
-        self.restored_mapping_snapshots = ()
-        self.prepared = None
-        self.mapping_dirty = False
-        if existing_subtitles:
-            request = LoadSubtitlesRequest(
-                tuple(
-                    SubtitleInput(item.path, item.encoding or None)
-                    for item in existing_subtitles
-                )
-            )
-            self._start_task(
-                lambda: self.subtitle_service.load_ordered(request),
-                self.translations.text("task.loading"),
-                self._project_subtitles_finished,
-                kind="project_subtitles",
-            )
-        else:
-            self._discard_pending_project_restore()
-            self.statusBar().showMessage(
-                self.translations.text("status.project_incomplete"), 8000
-            )
-
-    def _project_subtitles_finished(self, value: object) -> None:
-        result = cast(LoadSubtitlesResult, value)
-        self._subtitles_finished(result)
-        if self.pending_project is None:
-            return
-        if not result.ready:
+    def _project_restore_finished(self, value: object) -> None:
+        result = cast(ProjectRestoreResult, value)
+        project_path = self.pending_project_path
+        if (
+            project_path is None
+            or not result.ready
+            or result.scan is None
+            or result.subtitles is None
+            or result.prepared is None
+        ):
             self.task_failed = True
             self.task_status.setText(self.translations.text("task.failed"))
+            self._record_issues(result.issues)
             self._discard_pending_project_restore()
             self.statusBar().showMessage(
                 self.translations.text("status.project_incomplete"), 8000
             )
+            self._update_actions()
             return
-        state = self.pending_project.state
+        try:
+            checked = restore_project_state(result.project, project_file=project_path)
+            if checked.has_changed_sources:
+                raise ProjectSourceRelocationError(
+                    self.translations.text("project.source_changed_during_restore")
+                )
+            if self.pending_project_relocated:
+                save_project_atomically(result.project, project_path)
+        except (OSError, ProjectSchemaError, ValueError) as error:
+            self.task_failed = True
+            self.task_status.setText(self.translations.text("task.failed"))
+            self._record_error(str(error))
+            self._discard_pending_project_restore()
+            self.statusBar().showMessage(
+                self.translations.text("status.project_incomplete"), 8000
+            )
+            self._update_actions()
+            return
+        self._commit_project_restore(
+            result.restored,
+            result.scan,
+            result.subtitles,
+            result.prepared,
+            project_path,
+        )
+
+    def _commit_project_restore(
+        self,
+        restored: RestoredProject,
+        scan: ScanResult,
+        subtitles: LoadSubtitlesResult,
+        prepared: PreparedMerge,
+        project_path: Path,
+    ) -> None:
+        state = restored.state
+        self._discard_pending_project_restore()
+        self.path_edit.setText(str(state.bdmv_path))
+        self._scan_finished(scan)
+        for row in range(self.playlist_table.rowCount()):
+            item = self.playlist_table.item(row, 0)
+            if item is not None and item.text().casefold() == state.playlist_stem.casefold():
+                self.playlist_table.clearSelection()
+                self.playlist_table.selectRow(row)
+                break
+        self.subtitle_paths = [
+            item.path for item in sorted(state.subtitles, key=lambda item: item.order)
+        ]
+        self._subtitles_finished(subtitles)
+        self.conflict_policy = state.conflict_policy
+        self.accept_script_info_conflicts.blockSignals(True)
+        self.accept_script_info_conflicts.setChecked(
+            state.conflict_policy.accept_script_info_conflicts
+        )
+        self.accept_script_info_conflicts.blockSignals(False)
+        self.project_notes.setText(state.ui_notes)
+        self._restore_output_states(state.outputs)
+        self.timeline.set_user_boundaries(
+            tuple(
+                (item.id, item.time_90k)
+                for item in state.boundaries
+                if item.user_created
+            )
+        )
+        self._preflight_finished(prepared)
+        self.locked_subtitles = {
+            subtitle.path
+            for subtitle in state.subtitles
+            if any(
+                mapping.subtitle_id == subtitle.id and mapping.locked
+                for mapping in state.mappings
+            )
+        }
+        self._restore_project_mappings(state)
+        self.project_path = project_path
+        self.settings.setValue("recent/project", str(project_path))
+        self.statusBar().showMessage(
+            self.translations.text("status.project_loaded"), 8000
+        )
+
+    def _restore_project_mappings(self, state: ProjectState) -> None:
         saved_subtitles_by_path = {item.path: item for item in state.subtitles}
         restored_mappings_by_id = {
             item.subtitle_id: item for item in state.mappings
@@ -1527,7 +1717,6 @@ class MainWindow(QMainWindow):
                 MediaTick90k(item.manual_offset_90k),
             )
             for item in remapped_snapshots
-            if item.locked
         )
         self.restored_mapping_snapshots = tuple(remapped_snapshots)
         for row, subtitle, mapping in restored_rows:
@@ -1541,7 +1730,9 @@ class MainWindow(QMainWindow):
                 format_ticks(mapping.end_90k - mapping.start_90k),
                 f"{mapping.manual_offset_90k // 90} ms",
                 mapping.confidence,
-                self.translations.text("mapping.locked" if mapping.locked else "mapping.ready"),
+                self.translations.text(
+                    "mapping.locked" if mapping.locked else "mapping.ready"
+                ),
                 "; ".join(mapping.warnings),
             )
             for column, text in zip(range(4, 11), values, strict=True):
@@ -1551,23 +1742,6 @@ class MainWindow(QMainWindow):
         self._refresh_mapping_boundary_controls()
         self._show_timeline()
         self._update_actions()
-        incomplete = self.pending_project.has_changed_sources
-        project_path = self.pending_project_path
-        if project_path is not None:
-            self.project_path = project_path
-            self.settings.setValue("recent/project", str(project_path))
-        self.pending_project = None
-        self.pending_project_path = None
-        self.pending_project_previous_bdmv = ""
-        status_key = "status.project_incomplete" if incomplete else "status.project_loaded"
-        self.statusBar().showMessage(self.translations.text(status_key), 8000)
-
-    def _show_source_checks(self, restored: RestoredProject) -> None:
-        for check in restored.source_checks:
-            if check.state is SourceState.UNCHANGED:
-                continue
-            key = "project.missing" if check.state is SourceState.MISSING else "project.changed"
-            self._record_error(f"{self.translations.text(key)}: {check.id} - {check.path}")
 
     @Slot(QPoint)
     def show_playlist_context_menu(self, position: QPoint) -> None:
@@ -2327,6 +2501,12 @@ class MainWindow(QMainWindow):
         )
 
     def _prepare_request(self) -> PrepareMergeRequest | None:
+        if self.pending_project is not None:
+            self.statusBar().showMessage(
+                self.translations.text("status.project_relocation_pending"),
+                5000,
+            )
+            return None
         self._sync_subtitle_order()
         if (
             self.scan_result is None
@@ -2373,8 +2553,26 @@ class MainWindow(QMainWindow):
             locks=self._mapping_locks(),
             additional_boundaries=self._additional_boundaries(),
             accept_low_confidence=self.accept_low_confidence.isChecked(),
+            merge_options=MergeOptions(
+                playlist_end_ticks=int(self.selected_playlist.duration_90k),
+                accept_script_info_conflicts=(
+                    self.conflict_policy.accept_script_info_conflicts
+                ),
+                keep_events_ending_before_zero=(
+                    self.conflict_policy.keep_events_ending_before_zero
+                ),
+                clip_negative_starts=self.conflict_policy.clip_negative_starts,
+            ),
             report_target=report_target,
         )
+
+    @Slot(bool)
+    def _script_info_policy_changed(self, accepted: bool) -> None:
+        self.conflict_policy = replace(
+            self.conflict_policy,
+            accept_script_info_conflicts=accepted,
+        )
+        self._invalidate_preflight()
 
     def _additional_boundaries(self) -> tuple[TimelineBoundary, ...]:
         return tuple(
@@ -2452,6 +2650,9 @@ class MainWindow(QMainWindow):
             return
         locks = self._mapping_locks()
         lock_by_episode = {item.episode_id: item for item in locks}
+        snapshots_by_episode = {
+            item.subtitle_id: item for item in self.restored_mapping_snapshots
+        }
         boundaries = self._boundary_by_id()
         snapshots: list[MappingSnapshot] = []
         for mapping in self.prepared.mapping.mappings:
@@ -2471,6 +2672,7 @@ class MainWindow(QMainWindow):
                 Path(mapping.subtitle_ref),
                 default_offset_90k,
             )
+            saved_snapshot = snapshots_by_episode.get(mapping.episode_id)
             snapshots.append(
                 MappingSnapshot(
                     mapping.episode_id,
@@ -2479,7 +2681,7 @@ class MainWindow(QMainWindow):
                     int(start.time_90k),
                     int(end.time_90k),
                     manual_offset_90k,
-                    lock is not None
+                    (saved_snapshot.locked if saved_snapshot is not None else False)
                     or Path(mapping.subtitle_ref) in self.locked_subtitles,
                     mapping.confidence.value,
                     mapping.warnings,
@@ -2981,18 +3183,18 @@ class MainWindow(QMainWindow):
         self.task_status.setText(self.translations.text("task.cancelled"))
 
     def _clear_failed_project_restore(self) -> None:
-        if self.active_task_kind in {"project_scan", "project_subtitles"}:
-            if self.active_task_kind == "project_scan":
-                self.path_edit.setText(self.pending_project_previous_bdmv)
+        if self.active_task_kind == "project_restore":
+            self.path_edit.setText(self.pending_project_previous_bdmv)
             self._discard_pending_project_restore()
             self.pending_preflight = False
             self.mapping_preflight_timer.stop()
 
     def _discard_pending_project_restore(self) -> None:
+        self.pending_project_snapshot = None
         self.pending_project = None
         self.pending_project_path = None
         self.pending_project_previous_bdmv = ""
-        self.pending_restore_after_scan = False
+        self.pending_project_relocated = False
 
     @Slot()
     def _task_finished(self) -> None:
@@ -3012,10 +3214,7 @@ class MainWindow(QMainWindow):
         if task_succeeded:
             self.task_status.setText(self.translations.text("task.complete"))
         self._update_actions()
-        if task_succeeded and self.pending_restore_after_scan:
-            self.pending_restore_after_scan = False
-            self._continue_project_restore()
-        elif task_succeeded and self.pending_bdmv_scan_path is not None:
+        if task_succeeded and self.pending_bdmv_scan_path is not None:
             bdmv_path = self.pending_bdmv_scan_path
             self.pending_bdmv_scan_path = None
             self.path_edit.setText(str(bdmv_path))
@@ -3184,16 +3383,24 @@ class MainWindow(QMainWindow):
 
     def _update_actions(self) -> None:
         idle = self.active_task is None
+        project_ready = self.pending_project is None
         has_playlist = self.selected_playlist is not None
         has_subtitles = self.subtitle_result is not None and self.subtitle_result.ready
         has_subtitle_rows = idle and bool(self.subtitle_paths)
-        self.scan_button.setEnabled(idle and bool(self.path_edit.text().strip()))
-        self.add_subtitle_button.setEnabled(idle)
-        self.add_subtitle_directory_button.setEnabled(idle)
-        self.auto_map_button.setEnabled(idle and has_playlist and has_subtitles)
-        self.preflight_button.setEnabled(idle and has_playlist and has_subtitles)
+        self.scan_button.setEnabled(
+            idle and project_ready and bool(self.path_edit.text().strip())
+        )
+        self.add_subtitle_button.setEnabled(idle and project_ready)
+        self.add_subtitle_directory_button.setEnabled(idle and project_ready)
+        self.auto_map_button.setEnabled(
+            idle and project_ready and has_playlist and has_subtitles
+        )
+        self.preflight_button.setEnabled(
+            idle and project_ready and has_playlist and has_subtitles
+        )
         self.generate_button.setEnabled(
             idle
+            and project_ready
             and not self.mapping_dirty
             and self.prepared is not None
             and self.prepared.ready
@@ -3241,11 +3448,14 @@ class MainWindow(QMainWindow):
         ):
             widget.setEnabled(report_enabled)
         self.accept_low_confidence.setEnabled(idle)
+        self.accept_script_info_conflicts.setEnabled(idle)
         self.offset_spin.setEnabled(idle)
         self.project_notes.setEnabled(idle)
         self.advanced_toggle.setEnabled(idle)
-        self.open_button.setEnabled(idle)
-        self.save_button.setEnabled(idle and has_playlist and has_subtitles)
+        self.open_button.setEnabled(idle and project_ready)
+        self.save_button.setEnabled(
+            idle and project_ready and has_playlist and has_subtitles
+        )
 
     def set_language(self, locale: str) -> None:
         self.translations.set_locale(locale)

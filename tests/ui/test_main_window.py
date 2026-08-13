@@ -16,9 +16,9 @@ from bdsubmerge.application import (
     LoadSubtitlesResult,
     MergeReportFormat,
     PreparedMerge,
+    ProjectRestoreResult,
     ScanResult,
     SubtitleAsset,
-    SubtitleInput,
 )
 from bdsubmerge.cancellation import CancellationCheck
 from bdsubmerge.domain.models import (
@@ -31,10 +31,12 @@ from bdsubmerge.domain.models import (
 from bdsubmerge.domain.timebase import MediaTick90k
 from bdsubmerge.mapping import (
     BoundaryKind,
+    BoundarySource,
     EpisodeMapping,
     MappingConfidence,
     MappingLock,
     MappingResult,
+    boundary,
 )
 from bdsubmerge.merge import MergeNotice, MergeReport
 from bdsubmerge.output import (
@@ -45,13 +47,21 @@ from bdsubmerge.output import (
     preflight_outputs,
 )
 from bdsubmerge.project import (
+    BoundarySnapshot,
+    ConflictPolicySnapshot,
     FileFingerprint,
+    FileSnapshot,
     MappingSnapshot,
+    OutputSnapshot,
     OutputState,
+    PlaylistSnapshot,
+    ProjectSnapshot,
     ProjectState,
     RestoredProject,
     SourceCheck,
     SourceState,
+    StoredPath,
+    SubtitleSnapshot,
     SubtitleState,
 )
 from bdsubmerge.subtitles import SubtitleFormat, TextSubtitleInfo, parse_ass
@@ -125,6 +135,185 @@ def _multi_playlist_scan(tmp_path: Path, *, equivalent: bool) -> ScanResult:
             )
         )
     return ScanResult(scan.layout, tuple(playlists))
+
+
+def _stored(path: Path) -> StoredPath:
+    return StoredPath(None, str(path.absolute()))
+
+
+def _project_snapshot(
+    scan: ScanResult,
+    subtitles: tuple[tuple[str, Path, str, int], ...],
+    *,
+    boundaries: tuple[BoundarySnapshot, ...] | None = None,
+    conflict_policy: ConflictPolicySnapshot | None = None,
+    mappings: tuple[MappingSnapshot, ...] = (),
+) -> ProjectSnapshot:
+    assert scan.layout is not None
+    playlist = scan.playlists[0]
+    fingerprint = FileFingerprint(1, 1)
+    return ProjectSnapshot(
+        FileSnapshot(_stored(scan.layout.bdmv_path), fingerprint),
+        FileSnapshot(_stored(scan.layout.index_bdmv_path), fingerprint),
+        PlaylistSnapshot(
+            FileSnapshot(_stored(playlist.path), fingerprint),
+            playlist.stem,
+            int(playlist.duration_90k),
+            playlist.timeline_fingerprint,
+        ),
+        tuple(
+            SubtitleSnapshot(
+                subtitle_id,
+                FileSnapshot(_stored(path), fingerprint),
+                "ass",
+                encoding,
+                order,
+            )
+            for subtitle_id, path, encoding, order in subtitles
+        ),
+        boundaries
+        or (
+            BoundarySnapshot("playlist:start", 0),
+            BoundarySnapshot("playlist:end", int(playlist.duration_90k)),
+        ),
+        mappings,
+        (
+            OutputSnapshot(
+                "primary",
+                "full_path",
+                "",
+                _stored(scan.layout.bdmv_path.parent / "merged.ass"),
+                "utf-8",
+                "abort",
+            ),
+        ),
+        conflict_policy or ConflictPolicySnapshot(),
+        "restored note",
+    )
+
+
+def _restored_project(
+    snapshot: ProjectSnapshot,
+    scan: ScanResult,
+    subtitles: tuple[tuple[str, Path, str, int], ...],
+    *,
+    checks: tuple[SourceCheck, ...] = (),
+) -> RestoredProject:
+    assert scan.layout is not None
+    playlist = scan.playlists[0]
+    return RestoredProject(
+        ProjectState(
+            scan.layout.bdmv_path,
+            scan.layout.index_bdmv_path,
+            playlist.path,
+            playlist.stem,
+            int(playlist.duration_90k),
+            playlist.timeline_fingerprint,
+            tuple(
+                SubtitleState(subtitle_id, path, "ass", encoding, order)
+                for subtitle_id, path, encoding, order in subtitles
+            ),
+            snapshot.boundaries,
+            snapshot.mappings,
+            (
+                OutputState(
+                    "primary",
+                    "full_path",
+                    "",
+                    scan.layout.bdmv_path.parent / "merged.ass",
+                    "utf-8",
+                    "abort",
+                ),
+            ),
+            snapshot.conflict_policy,
+            snapshot.ui_notes,
+        ),
+        checks,
+    )
+
+
+def _workspace_identity(window: MainWindow) -> tuple[object, ...]:
+    return (
+        window.scan_result,
+        window.selected_playlist,
+        window.subtitle_result,
+        tuple(window.subtitle_paths),
+        window.path_edit.text(),
+        window.project_path,
+        window.prepared,
+        window.conflict_policy,
+        window.project_notes.text(),
+        tuple(window.restored_mapping_locks),
+        tuple(window.restored_mapping_snapshots),
+        frozenset(window.locked_subtitles),
+        tuple(sorted(window.subtitle_offsets_90k.items())),
+    )
+
+
+def _subtitle_asset(path: Path, encoding: str) -> SubtitleAsset:
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    return SubtitleAsset(
+        path,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+        encoding,
+    )
+
+
+def _restore_result(
+    snapshot: ProjectSnapshot,
+    restored: RestoredProject,
+    scan: ScanResult,
+    assets: tuple[SubtitleAsset, ...],
+) -> ProjectRestoreResult:
+    mappings_by_id = {item.subtitle_id: item for item in restored.state.mappings}
+    ordered_subtitles = tuple(
+        sorted(restored.state.subtitles, key=lambda item: item.order)
+    )
+    episode_mappings: list[EpisodeMapping] = []
+    for index, subtitle in enumerate(ordered_subtitles):
+        saved = mappings_by_id[subtitle.id]
+        episode_mappings.append(
+            EpisodeMapping(
+                f"episode-{index + 1}",
+                str(subtitle.path),
+                boundary(
+                    saved.start_boundary_id,
+                    saved.start_90k,
+                    BoundarySource(BoundaryKind.USER, "project"),
+                ),
+                boundary(
+                    saved.end_boundary_id,
+                    saved.end_90k,
+                    BoundarySource(BoundaryKind.USER, "project"),
+                ),
+                MediaTick90k(saved.manual_offset_90k),
+                0,
+                MappingConfidence(saved.confidence),
+                locked=saved.locked,
+                warnings=saved.warnings,
+            )
+        )
+    prepared = PreparedMerge(
+        MappingResult(tuple(episode_mappings), 0, MappingConfidence.HIGH),
+        None,
+        None,
+        None,
+        (),
+    )
+    return ProjectRestoreResult(
+        snapshot,
+        restored,
+        scan,
+        scan.playlists[0],
+        LoadSubtitlesResult(assets, SubtitleFormat.ASS),
+        prepared,
+    )
 
 
 def _select_playlist_rows(window: MainWindow, rows: tuple[int, ...]) -> None:
@@ -442,6 +631,44 @@ def test_warning_confirmation_is_localized_and_defaults_to_no(
     assert dialog.button(QMessageBox.StandardButton.No).text() == "否"
 
 
+def test_changed_source_confirmation_is_localized_and_defaults_to_no(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    path = tmp_path / "episode.ass"
+    fingerprint = FileFingerprint(1, 1)
+    source = SourceCheck(
+        "episode-1",
+        path,
+        SourceState.CHANGED,
+        fingerprint,
+        FileFingerprint(2, 2),
+    )
+    observed: list[QMessageBox] = []
+
+    def reject(dialog: QMessageBox) -> int:
+        observed.append(dialog)
+        return QMessageBox.StandardButton.No.value
+
+    monkeypatch.setattr(QMessageBox, "exec", reject)
+
+    confirmed = window._confirm_changed_project_source(source, path)
+
+    assert confirmed is False
+    assert len(observed) == 1
+    dialog = observed[0]
+    assert dialog.windowTitle() == "确认已变化的源"
+    assert "episode-1" in dialog.text()
+    assert str(path) in dialog.text()
+    assert dialog.standardButton(dialog.defaultButton()) == QMessageBox.StandardButton.No
+    assert dialog.standardButton(dialog.escapeButton()) == QMessageBox.StandardButton.No
+    assert dialog.button(QMessageBox.StandardButton.Yes).text() == "是"
+    assert dialog.button(QMessageBox.StandardButton.No).text() == "否"
+
+
 def test_playlist_double_click_opens_localized_read_only_structure(
     qtbot: QtBot, tmp_path: Path
 ) -> None:
@@ -718,105 +945,150 @@ def test_project_state_captures_and_restores_multiple_output_targets(
     assert restored.editing_output_id == "primary"
 
 
-def test_open_project_source_checks_are_shown_without_modal_dialog(
-    qtbot: QtBot, tmp_path: Path
+@pytest.mark.parametrize("source_state", (SourceState.MISSING, SourceState.CHANGED))
+def test_open_project_blocks_changed_or_missing_sources_before_scan(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_state: SourceState,
 ) -> None:
-    window = MainWindow(settings=_settings(tmp_path))
-    qtbot.addWidget(window)
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path / "current")
+    window.project_path = tmp_path / "current.bdsm.json"
+    before = _workspace_identity(window)
+    candidate_scan = _scan_result(tmp_path / "candidate")
+    subtitle = tmp_path / "candidate" / "missing.ass"
+    snapshot = _project_snapshot(
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
+    )
     fingerprint = FileFingerprint(1, 2)
-    check = SourceCheck(
-        "episode-1", tmp_path / "missing.ass", SourceState.MISSING, fingerprint, None
+    restored = _restored_project(
+        snapshot,
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
+        checks=(
+            SourceCheck(
+                "episode-1",
+                subtitle,
+                source_state,
+                fingerprint,
+                None if source_state is SourceState.MISSING else FileFingerprint(2, 3),
+            ),
+        ),
     )
-    state = ProjectState(
-        tmp_path / "BDMV",
-        tmp_path / "BDMV" / "index.bdmv",
-        tmp_path / "BDMV" / "PLAYLIST" / "00001.mpls",
-        "00001",
-        90_000,
-        (),
-        (),
-        (),
-        (),
-        (OutputState("primary", "jriver", "", None, "utf-8", "abort"),),
+    project_path = tmp_path / "candidate.bdsm.json"
+    started: list[str] = []
+    monkeypatch.setattr(
+        QFileDialog,
+        "getOpenFileName",
+        lambda *args: (str(project_path), "BDSubMerge (*.bdsm.json)"),
     )
-
-    window._show_source_checks(RestoredProject(state, (check,)))
-
-    assert "missing.ass" in window.error_panel.toPlainText()
-
-
-def test_failed_project_scan_preserves_previous_project_association(
-    qtbot: QtBot,
-    tmp_path: Path,
-) -> None:
-    window = MainWindow(settings=_settings(tmp_path))
-    qtbot.addWidget(window)
-    previous_project = tmp_path / "previous.bdsm.json"
-    next_project = tmp_path / "next.bdsm.json"
-    previous_bdmv = str(tmp_path / "Previous" / "BDMV")
-    state = ProjectState(
-        tmp_path / "Next" / "BDMV",
-        tmp_path / "Next" / "BDMV" / "index.bdmv",
-        tmp_path / "Next" / "BDMV" / "PLAYLIST" / "00001.mpls",
-        "00001",
-        90_000,
-        (),
-        (),
-        (),
-        (),
-        (),
+    monkeypatch.setattr(
+        "bdsubmerge.ui.main_window.load_restored_project",
+        lambda _path: (snapshot, restored),
     )
-    window.project_path = previous_project
-    window.pending_project = RestoredProject(state, ())
-    window.pending_project_path = next_project
-    window.pending_project_previous_bdmv = previous_bdmv
-    window.path_edit.setText(str(state.bdmv_path))
-    failed = ScanResult(
-        None,
-        (),
-        (ApplicationIssue(ApplicationSeverity.ERROR, "scan_failed", "boom"),),
+    monkeypatch.setattr(window, "_resolve_project_sources", lambda: False)
+    monkeypatch.setattr(
+        window,
+        "_start_task",
+        lambda *args, **kwargs: started.append(str(kwargs.get("kind", ""))),
     )
 
-    window._scan_finished(failed)
+    window.open_project()
 
-    assert window.project_path == previous_project
+    assert started == []
+    assert _workspace_identity(window) == before
     assert window.pending_project is None
+    assert window.pending_project_snapshot is None
     assert window.pending_project_path is None
-    assert window.path_edit.text() == previous_bdmv
-    assert window.task_status.text() == window.translations.text("task.failed")
 
 
-def test_successful_project_scan_clears_old_association_until_restore_completes(
+def test_project_restore_starts_one_transactional_background_task(
     qtbot: QtBot,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window = MainWindow(settings=_settings(tmp_path))
-    qtbot.addWidget(window)
-    scan = _scan_result(tmp_path)
-    assert scan.layout is not None
-    previous_project = tmp_path / "previous.bdsm.json"
-    next_project = tmp_path / "next.bdsm.json"
-    state = ProjectState(
-        scan.layout.bdmv_path,
-        scan.layout.index_bdmv_path,
-        scan.playlists[0].path,
-        scan.playlists[0].stem,
-        int(scan.playlists[0].duration_90k),
-        (),
-        (),
-        (),
-        (),
-        (),
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path / "current")
+    candidate_scan = _scan_result(tmp_path / "candidate")
+    subtitle = tmp_path / "candidate.ass"
+    snapshot = _project_snapshot(
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
     )
-    window.project_path = previous_project
-    window.pending_project = RestoredProject(state, ())
-    window.pending_project_path = next_project
+    window.pending_project_snapshot = snapshot
+    window.pending_project = _restored_project(
+        snapshot,
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
+    )
+    window.pending_project_path = tmp_path / "candidate.bdsm.json"
+    started: list[tuple[Callable[[], object], Callable[[object], None], str]] = []
 
-    window._scan_finished(scan)
+    def capture_task(
+        operation: Callable[[], object],
+        _status: str,
+        success: Callable[[object], None],
+        *,
+        kind: str = "",
+    ) -> None:
+        started.append((operation, success, kind))
 
-    assert window.project_path is None
-    assert window.pending_project_path == next_project
-    assert window.pending_restore_after_scan is True
+    monkeypatch.setattr(window, "_start_task", capture_task)
+
+    window._start_pending_project_restore()
+
+    assert len(started) == 1
+    assert started[0][1] == window._project_restore_finished
+    assert started[0][2] == "project_restore"
+
+
+@pytest.mark.parametrize(
+    "issue_code",
+    (
+        "scan_failed",
+        "project.index_mismatch",
+        "subtitle_load_failed",
+        "mapping_reproduction_failed",
+    ),
+)
+def test_failed_project_restore_result_preserves_existing_workspace(
+    qtbot: QtBot,
+    tmp_path: Path,
+    issue_code: str,
+) -> None:
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path / "current")
+    window.project_path = tmp_path / "current.bdsm.json"
+    before = _workspace_identity(window)
+    candidate_scan = _scan_result(tmp_path / "candidate")
+    subtitle = tmp_path / "candidate.ass"
+    snapshot = _project_snapshot(
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
+    )
+    restored = _restored_project(
+        snapshot,
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
+    )
+    window.pending_project_snapshot = snapshot
+    window.pending_project = restored
+    window.pending_project_path = tmp_path / "candidate.bdsm.json"
+    window.pending_project_previous_bdmv = window.path_edit.text()
+    failed = ProjectRestoreResult(
+        snapshot,
+        restored,
+        issues=(
+            ApplicationIssue(ApplicationSeverity.ERROR, issue_code, "boom"),
+        ),
+    )
+
+    window._project_restore_finished(failed)
+
+    assert _workspace_identity(window) == before
+    assert window.pending_project is None
+    assert window.pending_project_snapshot is None
+    assert window.pending_project_path is None
+    assert window.task_status.text() == window.translations.text("task.failed")
 
 
 def test_manual_scan_of_another_bdmv_clears_project_association(
@@ -835,76 +1107,173 @@ def test_manual_scan_of_another_bdmv_clears_project_association(
     assert window.project_path is None
 
 
-def test_failed_project_subtitle_restore_keeps_new_workspace_unassociated(
+def test_cancelled_project_restore_preserves_existing_workspace(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path / "current")
+    window.project_path = tmp_path / "current.bdsm.json"
+    before = _workspace_identity(window)
+    candidate_scan = _scan_result(tmp_path / "candidate")
+    subtitle = tmp_path / "candidate.ass"
+    snapshot = _project_snapshot(
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
+    )
+    window.pending_project_snapshot = snapshot
+    window.pending_project = _restored_project(
+        snapshot,
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
+    )
+    window.pending_project_path = tmp_path / "candidate.bdsm.json"
+    window.pending_project_previous_bdmv = window.path_edit.text()
+    window.active_task_kind = "project_restore"
+
+    window._task_cancelled()
+
+    assert _workspace_identity(window) == before
+    assert window.pending_project is None
+    assert window.pending_project_snapshot is None
+    assert window.pending_project_path is None
+    assert window.task_status.text() == window.translations.text("task.cancelled")
+
+
+def test_source_race_after_project_prepare_preserves_existing_workspace(
     qtbot: QtBot,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window = MainWindow(settings=_settings(tmp_path))
-    qtbot.addWidget(window)
-    scan = _scan_result(tmp_path)
-    window._scan_finished(scan)
-    subtitle = tmp_path / "broken.ass"
-    state = ProjectState(
-        scan.layout.bdmv_path,
-        scan.layout.index_bdmv_path,
-        scan.playlists[0].path,
-        scan.playlists[0].stem,
-        int(scan.playlists[0].duration_90k),
-        (),
-        (SubtitleState("episode-1", subtitle, "ass", "utf-8", 0),),
-        (),
-        (),
-        (),
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path / "current")
+    window.project_path = tmp_path / "current.bdsm.json"
+    before = _workspace_identity(window)
+    candidate_scan = _scan_result(tmp_path / "candidate")
+    subtitle = tmp_path / "candidate.ass"
+    subtitle.write_text("subtitle", encoding="utf-8")
+    snapshot = _project_snapshot(
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
     )
-    window.project_path = None
-    window.pending_project = RestoredProject(state, ())
-    window.pending_project_path = tmp_path / "next.bdsm.json"
-    failed = LoadSubtitlesResult(
-        (),
-        None,
-        (ApplicationIssue(ApplicationSeverity.ERROR, "subtitle_load_failed", "boom"),),
+    restored = _restored_project(
+        snapshot,
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
     )
-
-    window._project_subtitles_finished(failed)
-
-    assert window.project_path is None
-    assert window.pending_project is None
-    assert window.pending_project_path is None
-
-    subtitle.write_text(
-        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
-        "[Events]\nFormat: Start, End, Style, Text\n"
-        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n",
-        encoding="utf-8",
+    window.pending_project_snapshot = snapshot
+    window.pending_project = restored
+    window.pending_project_path = tmp_path / "candidate.bdsm.json"
+    window.pending_project_previous_bdmv = window.path_edit.text()
+    assets = (_subtitle_asset(subtitle, "utf-8"),)
+    mapping = MappingSnapshot(
+        "episode-1",
+        "playlist:start",
+        "playlist:end",
+        0,
+        int(candidate_scan.playlists[0].duration_90k),
+        0,
+        False,
+        "high",
     )
-    document = parse_ass(subtitle.read_text(encoding="utf-8"))
-    asset = SubtitleAsset(
+    snapshot = replace(snapshot, mappings=(mapping,))
+    restored = replace(
+        restored,
+        state=replace(restored.state, mappings=(mapping,)),
+    )
+    window.pending_project_snapshot = snapshot
+    window.pending_project = restored
+    changed_check = SourceCheck(
+        "episode-1",
         subtitle,
-        SubtitleFormat.ASS,
-        document,
-        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
-        "utf-8",
-    )
-    save_as = tmp_path / "recovered.bdsm.json"
-    saved_paths: list[Path] = []
-    window.subtitle_result = LoadSubtitlesResult((asset,), SubtitleFormat.ASS)
-    window.subtitle_paths = [subtitle]
-    window.selected_playlist = scan.playlists[0]
-    monkeypatch.setattr(
-        QFileDialog,
-        "getSaveFileName",
-        lambda *args: (str(save_as), "BDSubMerge (*.bdsm.json)"),
+        SourceState.CHANGED,
+        FileFingerprint(1, 1),
+        FileFingerprint(2, 2),
     )
     monkeypatch.setattr(
-        "bdsubmerge.ui.main_window.capture_and_save",
-        lambda state, path: saved_paths.append(path),
+        "bdsubmerge.ui.main_window.restore_project_state",
+        lambda *_args, **_kwargs: replace(restored, source_checks=(changed_check,)),
     )
 
-    window.save_project()
+    window._project_restore_finished(
+        _restore_result(snapshot, restored, candidate_scan, assets)
+    )
 
-    assert saved_paths == [save_as]
-    assert window.project_path == save_as
+    assert _workspace_identity(window) == before
+    assert window.pending_project is None
+    assert window.pending_project_snapshot is None
+    assert window.pending_project_path is None
+    assert window.task_status.text() == window.translations.text("task.failed")
+
+
+def test_relocated_project_atomic_save_failure_preserves_existing_workspace(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path / "current")
+    window.project_path = tmp_path / "current.bdsm.json"
+    before = _workspace_identity(window)
+    candidate_scan = _scan_result(tmp_path / "candidate")
+    subtitle = tmp_path / "candidate.ass"
+    subtitle.write_text("subtitle", encoding="utf-8")
+    mapping = MappingSnapshot(
+        "episode-1",
+        "playlist:start",
+        "playlist:end",
+        0,
+        int(candidate_scan.playlists[0].duration_90k),
+        0,
+        False,
+        "high",
+    )
+    snapshot = _project_snapshot(
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
+        mappings=(mapping,),
+    )
+    restored = _restored_project(
+        snapshot,
+        candidate_scan,
+        (("episode-1", subtitle, "utf-8", 0),),
+    )
+    window.pending_project_snapshot = snapshot
+    window.pending_project = restored
+    window.pending_project_path = tmp_path / "candidate.bdsm.json"
+    window.pending_project_previous_bdmv = window.path_edit.text()
+    window.pending_project_relocated = True
+    commits: list[str] = []
+
+    def fail_save(_project: ProjectSnapshot, _path: Path) -> None:
+        raise OSError("save failed")
+
+    monkeypatch.setattr(
+        "bdsubmerge.ui.main_window.restore_project_state",
+        lambda *_args, **_kwargs: restored,
+    )
+    monkeypatch.setattr(
+        "bdsubmerge.ui.main_window.save_project_atomically",
+        fail_save,
+    )
+    monkeypatch.setattr(
+        window,
+        "_commit_project_restore",
+        lambda *_args, **_kwargs: commits.append("commit"),
+    )
+
+    window._project_restore_finished(
+        _restore_result(
+            snapshot,
+            restored,
+            candidate_scan,
+            (_subtitle_asset(subtitle, "utf-8"),),
+        )
+    )
+
+    assert commits == []
+    assert _workspace_identity(window) == before
+    assert window.pending_project is None
+    assert window.pending_project_snapshot is None
+    assert window.pending_project_path is None
+    assert "save failed" in window.error_panel.toPlainText()
 
 
 def test_playlist_table_supports_multiple_selection(qtbot: QtBot, tmp_path: Path) -> None:
@@ -1114,70 +1483,147 @@ def test_restored_mapping_locks_are_used_before_new_preflight(
     assert window._mapping_locks() == (lock,)
 
 
-def test_project_mapping_is_restored_by_subtitle_id(
-    qtbot: QtBot, tmp_path: Path
+def test_successful_project_restore_commits_complete_saved_workspace(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window = MainWindow(settings=_settings(tmp_path))
-    qtbot.addWidget(window)
-    subtitle = tmp_path / "episode.ass"
-    subtitle.write_text("subtitle", encoding="utf-8")
-    document = parse_ass(
-        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
-        "[Events]\nFormat: Start, End, Style, Text\n"
-        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    window, _, _ = _prepared_mapping_window(qtbot, tmp_path / "current")
+    previous_project = tmp_path / "current.bdsm.json"
+    window.project_path = previous_project
+    candidate_scan = _scan_result(tmp_path / "candidate")
+    episode_1 = tmp_path / "candidate" / "E1.ass"
+    episode_2 = tmp_path / "candidate" / "E2.ass"
+    episode_1.write_text("subtitle", encoding="utf-8")
+    episode_2.write_text("subtitle", encoding="utf-8")
+    duration = int(candidate_scan.playlists[0].duration_90k)
+    middle = duration // 2
+    boundaries = (
+        BoundarySnapshot("playlist:start", 0),
+        BoundarySnapshot("user:middle", middle, user_created=True),
+        BoundarySnapshot("playlist:end", duration),
     )
-    asset = SubtitleAsset(
-        subtitle,
-        SubtitleFormat.ASS,
-        document,
-        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
-        "utf-8",
+    mappings = (
+        MappingSnapshot(
+            "saved-e1",
+            "playlist:start",
+            "user:middle",
+            0,
+            middle,
+            901,
+            True,
+            "high",
+        ),
+        MappingSnapshot(
+            "saved-e2",
+            "user:middle",
+            "playlist:end",
+            middle,
+            duration,
+            0,
+            False,
+            "high",
+        ),
     )
-    mapping = MappingSnapshot(
-        "episode-1",
-        "playlist:start",
-        "playlist:end",
-        0,
-        90_000,
-        901,
-        True,
-        "high",
+    conflict_policy = ConflictPolicySnapshot(
+        accept_script_info_conflicts=True,
+        keep_events_ending_before_zero=True,
+        clip_negative_starts=False,
+        preserve_unknown_sections=False,
     )
-    state = ProjectState(
-        tmp_path / "BDMV",
-        tmp_path / "BDMV" / "index.bdmv",
-        tmp_path / "BDMV" / "PLAYLIST" / "00001.mpls",
-        "00001",
-        90_000,
-        (),
-        (SubtitleState("episode-1", subtitle, "ass", "utf-8", 0),),
-        (),
-        (mapping,),
-        (),
+    saved_subtitles = (
+        ("saved-e2", episode_2, "shift_jis", 1),
+        ("saved-e1", episode_1, "gb18030", 0),
     )
-    window.subtitle_paths = [subtitle]
-    window.pending_project = RestoredProject(state, ())
-    project_path = tmp_path / "restored.bdsm.json"
+    snapshot = _project_snapshot(
+        candidate_scan,
+        saved_subtitles,
+        boundaries=boundaries,
+        conflict_policy=conflict_policy,
+        mappings=mappings,
+    )
+    restored = _restored_project(snapshot, candidate_scan, saved_subtitles)
+    project_path = tmp_path / "candidate.bdsm.json"
+    window.pending_project_snapshot = snapshot
+    window.pending_project = restored
     window.pending_project_path = project_path
+    window.pending_project_previous_bdmv = window.path_edit.text()
+    events: list[str] = []
+    monkeypatch.setattr(
+        "bdsubmerge.ui.main_window.restore_project_state",
+        lambda *_args, **_kwargs: restored,
+    )
+    original_commit = window._commit_project_restore
 
-    window._project_subtitles_finished(LoadSubtitlesResult((asset,), SubtitleFormat.ASS))
+    def tracked_commit(
+        committed: RestoredProject,
+        committed_scan: ScanResult,
+        committed_subtitles: LoadSubtitlesResult,
+        committed_prepared: PreparedMerge,
+        committed_path: Path,
+    ) -> None:
+        events.append("commit")
+        original_commit(
+            committed,
+            committed_scan,
+            committed_subtitles,
+            committed_prepared,
+            committed_path,
+        )
 
+    monkeypatch.setattr(window, "_commit_project_restore", tracked_commit)
+    result = _restore_result(
+        snapshot,
+        restored,
+        candidate_scan,
+        (
+            _subtitle_asset(episode_1, "gb18030"),
+            _subtitle_asset(episode_2, "shift_jis"),
+        ),
+    )
+
+    window._project_restore_finished(result)
+
+    assert events == ["commit"]
+    assert window.project_path == project_path
+    assert window.project_path != previous_project
+    assert window.pending_project is None
+    assert window.pending_project_snapshot is None
+    assert window.pending_project_path is None
+    assert window.scan_result is candidate_scan
+    assert window.subtitle_paths == [episode_1, episode_2]
+    assert window.subtitle_result is not None
+    assert tuple(asset.encoding for asset in window.subtitle_result.assets) == (
+        "gb18030",
+        "shift_jis",
+    )
+    assert tuple(window._row_path(row) for row in range(2)) == (
+        episode_1,
+        episode_2,
+    )
+    assert window.restored_mapping_snapshots[0].locked is True
+    assert window.restored_mapping_snapshots[0].manual_offset_90k == 901
+    assert window.restored_mapping_snapshots[1].locked is False
+    assert window.restored_mapping_snapshots[1].manual_offset_90k == 0
     assert window.restored_mapping_locks == (
         MappingLock(
             "episode-1",
             "playlist:start",
-            "playlist:end",
+            "user:middle",
             MediaTick90k(901),
         ),
+        MappingLock(
+            "episode-2",
+            "user:middle",
+            "playlist:end",
+            MediaTick90k(0),
+        ),
     )
-    assert window.mapping_table.item(0, 4).text() == "playlist:start"
-    assert window.mapping_table.item(0, 5).text() == "playlist:end"
-    assert window.mapping_table.item(0, 7).text() == "10 ms"
-    assert window.subtitle_offsets_90k[subtitle] == 901
-    assert window._mapping_locks()[0].manual_offset_90k == 901
-    assert window.project_path == project_path
-    assert window.pending_project is None
-    assert window.pending_project_path is None
+    assert window.locked_subtitles == {episode_1}
+    assert window.subtitle_offsets_90k == {episode_1: 901, episode_2: 0}
+    assert window.conflict_policy == conflict_policy
+    assert window.accept_script_info_conflicts.isChecked() is True
+    assert window.project_notes.text() == "restored note"
 
 
 def test_adding_directory_preserves_manual_order_and_appends_naturally(
@@ -1255,93 +1701,6 @@ def test_adding_directory_preserves_manual_order_and_appends_naturally(
         episode_1,
         episode_2,
     )
-
-
-def test_project_restore_uses_saved_subtitle_order_and_encoding(
-    qtbot: QtBot,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    window = MainWindow(settings=_settings(tmp_path))
-    qtbot.addWidget(window)
-    scan = _scan_result(tmp_path)
-    window._scan_finished(scan)
-    episode_1 = tmp_path / "E1.ass"
-    episode_2 = tmp_path / "E2.ass"
-    stale = tmp_path / "stale.ass"
-    for path in (episode_1, episode_2, stale):
-        path.write_text("subtitle", encoding="utf-8")
-    document = parse_ass(
-        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
-        "[Events]\nFormat: Start, End, Style, Text\n"
-        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
-    )
-    assets = {
-        path: SubtitleAsset(
-            path,
-            SubtitleFormat.ASS,
-            document,
-            TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
-            encoding,
-        )
-        for path, encoding in ((episode_1, "gb18030"), (episode_2, "shift_jis"))
-    }
-    requests: list[LoadSubtitlesRequest] = []
-
-    def load_ordered(
-        request: LoadSubtitlesRequest,
-        *,
-        cancellation_check: CancellationCheck | None = None,
-    ) -> LoadSubtitlesResult:
-        del cancellation_check
-        requests.append(request)
-        return LoadSubtitlesResult(
-            tuple(assets[source.path] for source in request.sources),
-            SubtitleFormat.ASS,
-        )
-
-    def run_immediately(
-        operation: Callable[[], object],
-        status: str,
-        success: Callable[[object], None],
-        *,
-        kind: str = "",
-    ) -> None:
-        del status, kind
-        success(operation())
-
-    monkeypatch.setattr(window.subtitle_service, "load_ordered", load_ordered)
-    monkeypatch.setattr(window, "_start_task", run_immediately)
-    state = ProjectState(
-        scan.layout.bdmv_path,
-        scan.layout.index_bdmv_path,
-        scan.playlists[0].path,
-        scan.playlists[0].stem,
-        int(scan.playlists[0].duration_90k),
-        (),
-        (
-            SubtitleState("episode-2", episode_2, "ass", "shift_jis", 1),
-            SubtitleState("episode-1", episode_1, "ass", "gb18030", 0),
-        ),
-        (),
-        (),
-        (),
-    )
-    window.subtitle_paths = [stale]
-    window.locked_subtitles.add(stale)
-    window.subtitle_offsets_90k[stale] = 9_000
-    window.pending_project = RestoredProject(state, ())
-
-    window._continue_project_restore()
-
-    assert requests[0].sources == (
-        SubtitleInput(episode_1, "gb18030"),
-        SubtitleInput(episode_2, "shift_jis"),
-    )
-    assert window.subtitle_paths == [episode_1, episode_2]
-    assert tuple(window._row_path(row) for row in range(2)) == (episode_1, episode_2)
-    assert stale not in window.locked_subtitles
-    assert stale not in window.subtitle_offsets_90k
 
 
 def test_user_boundaries_are_forwarded_and_invalidate_preflight(

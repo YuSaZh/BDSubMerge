@@ -5,9 +5,34 @@
 - 工具面向 Windows 11，输入 BDMV/PLAYLIST/MPLS/index.bdmv，输出外置 ASS/SSA/SRT/SUP。
 - 任务书要求自动播放列表推荐、分集字幕映射、可视化时间线、多输出目标、项目复现和 CLI。
 - UI 默认简体中文并支持英文，耗时任务必须在后台运行。
-- 本机禁止构建、测试、lint、类型检查、依赖安装和打包；本机只做源码检查、静态搜索、Git 操作与 `git diff --check`，所有执行型验证必须提交并推送到 GitHub Actions。
+- 本机固定使用 `py -3.12`，允许安装缺失 Python 包并运行测试、Ruff、Mypy、构建和打包；不得误用默认 Python 3.14。
+- 当前仓库 `AGENTS.md`、用户最新指令和实时 Goal 优先于旧会话摘要或子任务 fork；更早的本机零执行记录已失效，非 Python 环境验证才转交 GitHub Actions。
+- Git/GitHub 必须直接使用本机已有 SSH 与 `gh` 凭据；禁止转入浏览器登录或另建认证路径。
+- 本轮实时验证确认 Hanam 本机 SSH 凭据可读取 `YuSaZh/BDSubMerge`，远端 `main` 为 `8fd25a7`；`gh` 的独立缓存 token 当前失效，不能据此误判 Git SSH 凭据不可用。
 
 ## 研究发现
+- 最新工作树已将 `ProjectRestoreApplicationService` 从应用包导出，并在 CLI `_prepare_project()` 与 GUI 后台项目恢复任务中调用；早期“尚未接入”的记录已过时。当前证据缺口转为完整服务级回归、UI 两阶段提交细节和旧 CLI 测试替身兼容性。
+- 2026-08-13 用户最终确认恢复本地 Python 3.12 执行权限：测试、Ruff、Mypy、构建、打包和缺失 Python 包安装均允许；此前“本机零执行”规则已失效。
+- 当前 `ProjectRestoreApplicationService` 草稿已经覆盖扫描身份、字幕加载、保存边界/映射锁、输出目标、冲突策略和映射复现检查，适合作为 CLI/GUI 唯一恢复入口；当前阻断不是另造算法，而是导出该服务、删除 CLI 重复准备逻辑，并让 GUI 从多回调状态变更改为成功后单次提交。
+- 本机已安装 Python 3.12 项目依赖、PySide6、pytest、Ruff、Mypy、build、Hatchling 和 PyInstaller，可直接用于当前验证。
+- 发布前仍有 GUI 项目源重定位缺口：打开项目遇到 changed/missing 输入时，现有 UI 只显示诊断并继续扫描，没有让用户重定位；任务书 20.2、AC-06 和双语指南均要求对此提供明确、可恢复的流程。因此阶段 5 的完成状态已撤回，本批优先完成该阻断项。
+- 项目恢复必须在任何 BDMV 重扫或字幕重载前完成源门禁；否则 GUI 会把重载后的当前指纹当作新基线，使项目保存时记录的 changed/missing 身份约束失效。全部源完成恢复前还必须禁止覆盖原项目文件和生成输出。
+- `index_bdmv`、`playlist` 不能作为只改快照、不改实际读取源的孤立定位器。共享项目恢复服务必须构造并验证与已确认路径一致的运行时 layout/playlist/subtitles，CLI 与 GUI 都消费同一个准备结果。
+- changed 候选的显式确认只授权接受内容变化，不授权跳过领域身份校验。index、MPLS 和字幕必须先验证角色、格式和播放列表身份；确认后刷新指纹并原子保存项目，下一次打开才应报告 unchanged。
+- `ProjectSourceRelocationService` 当前只有单元测试调用，GUI 尚不可达；任务书只要求用户可重新定位，并不要求自动递归搜索，因此本批使用手工目录/文件选择器，不接入 `rglob` 候选搜索。
+- `open_project()` 当前丢弃 `ProjectSnapshot` 而只保留 `RestoredProject`，导致 GUI 无法把原始源快照交给重定位服务；changed/missing 只进入错误面板后仍继续扫描，missing 字幕被过滤、changed 字幕继续加载，保存时可能刷新错误基线。
+- GUI 当前即使 `has_changed_sources=True` 仍绑定 `project_path`；恢复门禁必须提前到任何扫描/加载之前，并在原项目原子写回失败时让新工作区保持未关联。
+- GUI 当前只按保存的 stem 选择播放列表，没有像 CLI 一样校验保存时长和 `timeline_fingerprint`；共享恢复服务必须统一这两项身份门禁，不能由两端各自实现。
+- 保存映射的复现门禁必须覆盖全部映射，包括 `locked=False, offset=0`；仅恢复显式锁会让零偏移映射被重新求解，违反 AC-06。准备结果还必须逐项核对数量、顺序、路径、边界、offset 和 lock 状态。
+- GUI 当前未恢复 `ConflictPolicySnapshot`，准备合并时也未投影 `MergeOptions`，保存又会写回默认值。共享服务需恢复 `ass_style_policy`、`script_info_policy`、`play_res_policy` 与 `preserve_unknown_sections`，前三项进入引擎选项，未知段设置至少透明往返。
+- Script Info/PlayRes 冲突接受入口应位于折叠高级选项，默认关闭、双语可见；切换后必须让既有预检失效，并随项目保存/恢复。它是显式风险接受，不得静默放宽 warning 门禁。
+- GUI 不接入同步 `rglob()` 候选搜索；每次手工选择应用时由共享服务重新计算并校验指纹，避免选择与应用之间的文件竞态。
+- 本批不扩大 CLI 命令面：任务书最小命令清单不要求 `relocate` 子命令，现有 CLI 对 changed/missing 非交互阻断可保留；应共享的是准备服务及身份/映射/策略契约。
+- 核心回归矩阵包括 unchanged 直接恢复、missing 在扫描前进入重定位、exact 文件免确认、changed 默认 No/ESC No、多源逐项恢复、播放列表 stem/时长/fingerprint 失败、零偏移未锁定映射复现、冲突策略四字段往返，以及扫描/字幕/原子保存失败的两阶段关联不变量。
+- `docs/architecture.md` 明确规定 `project` 层只拥有版本化快照和中立状态 DTO，应用服务协调 BDMV、字幕、映射、预检和事务写入，GUI/CLI 不得复制规则。当前在研 GUI 草稿可保留重定位交互壳，但其扫描身份校验和项目准备逻辑必须迁入 `application` 层。
+- 任务书 20.2 只明确要求文件缺失时允许用户重定位；21 节同时要求 CLI 无交互且 GUI/CLI 使用相同应用服务。这进一步支持“GUI 提供交互、CLI 保持阻断、两端共享无 UI 的恢复准备契约”。
+- 续接后的任务书原文复核确认 AC-06 要求重新打开后映射、输出目标和未变化输入的输出内容保持确定，输入变化必须明确警告；20.2 还要求缺失文件可由用户重新定位。当前 `application/project_restore.py` 只有扫描身份校验，CLI 的完整准备仍位于私有 `_prepare_project()`，不能作为共享应用服务完成证据。
+- 当前 GUI 草稿在项目恢复完成前调用现有 `start_scan()` / 字幕加载回调，这些回调会更新 `scan_result`、播放列表、输出、映射和任务状态；即使最终不绑定项目，也无法保证取消或中途失败时旧工作区原样保留。正确边界是后台应用服务返回完整且已验证的准备结果，GUI 成功后才一次性投影状态。
 - 2026-08-13 继续开发时，`main` 与 `origin/main` 均为 `251424a`，工作树除 `task_plan.md`、`findings.md`、`progress.md` 外无未提交文件；`application/display_models.py` 已有 Qt 无关的播放列表/字幕详情投影，但 GUI 尚未接入，下一批必须以任务书原文和现有 UI 状态机为准补齐。
 - 已有 `format_playlist_structure` / `format_subtitle_details` 包含英文硬编码；双语 GUI 不应复用其最终文本，而应消费对应 dataclass 后在 UI 层翻译和格式化。
 - 输出目标表原先只有 ID、模式、路径和冲突策略，任务书 19.5 还要求编码、是否备份和输出格式；本批扩为 7 列，并让路径列独占伸缩空间，便于同时扫描多个目标。
@@ -51,6 +76,7 @@
 - 共享 warning 门禁批次的主路径已静态确认：`prepare()` 汇总 playlist、subtitle、低置信度、merge 与 output warning，`execute()` 仅在真实写入且 warning 未接受时返回 `warnings_not_accepted`，dry-run 保持零写入成功。全部 `ExecuteMergeRequest` 调用已逐项核对：overwrite、SUP 估算与低置信度接受分支显式确认；AC-06 的 auto-rename 仅产生 info，保持默认拒绝 warning 并新增严重度回归断言。
 - 共享 prepare 接管 playlist/subtitle warning 后，CLI 成功路径仍同时拼接 scan/inspect/subtitle preliminary issues，可能让同一诊断重复出现；CLI 最终汇总现按完整 `CliIssue` 保序去重，既保留 scan 独有诊断，也避免 validate 和 merge dry-run 重复展示。
 - commit `8fd25a7` / run `31685081960` 已闭环共享 warning 门禁：源码包、双平台 Ruff/Mypy/Pytest、Windows 真实 UNC 和 Linux 四态截图矩阵全部通过。JUnit 为 Ubuntu 288 项（2 skipped）和 Windows 288 项，coverage XML 行覆盖率为 87.54%/87.52%；artifacts `9175097451`、`9175090247`、`9175089638`、`9175057242` 均完整，四张截图哈希互异且目视无重叠、截断或 CJK 缺字。
+- 项目恢复准备若没有生成 mapping，必须同时返回合并服务的底层 error（如 `mapping_failed`）与恢复层的 `mapping_reproduction_failed`；只传播 `source_*` 会丢失可操作根因。
 
 ## 技术决策
 | 决策 | 理由 |
@@ -59,6 +85,8 @@
 | Shinya 通过单一适配器隔离 | 第三方字段变化只影响边界层 |
 | 映射使用确定性有序非重叠动态规划 | 同一输入应得到稳定、可解释结果 |
 | 项目文件保存相对路径并保留绝对恢复提示 | 兼顾可迁移性和源文件重定位 |
+| 项目恢复集中到共享应用服务 | 确保 GUI/CLI 对同一组确认路径、时间线身份、保存映射和冲突策略执行同一门禁 |
+| CLI 不新增 `relocate` 子命令 | 任务书未要求该命令，现有非交互阻断已满足 CLI 边界，避免扩大发布表面 |
 | CI 覆盖 Ubuntu 与 Windows | Linux 快速发现问题，Windows 验证目标平台 |
 
 ## 已知风险

@@ -114,12 +114,11 @@ def test_ac09_window_remains_responsive_and_cancel_suppresses_success(
         return "must be suppressed"
 
     window.pending_project = cast(RestoredProject, object())
-    window.pending_restore_after_scan = True
     window._start_task(
         blocking_operation,
         "blocked",
         successes.append,
-        kind="project_scan",
+        kind="project_restore",
     )
     qtbot.waitUntil(started.is_set, timeout=3000)
 
@@ -139,7 +138,6 @@ def test_ac09_window_remains_responsive_and_cancel_suppresses_success(
     assert successes == []
     assert window.cancellation is None
     assert window.pending_project is None
-    assert window.pending_restore_after_scan is False
     assert window.task_status.text() == window.translations.text("task.cancelled")
 
 
@@ -150,14 +148,12 @@ def test_failed_project_task_keeps_failure_status_and_clears_restore_state(
     window = MainWindow(settings=_settings(tmp_path))
     qtbot.addWidget(window)
     window.pending_project = cast(RestoredProject, object())
-    window.pending_restore_after_scan = True
-    window.active_task_kind = "project_subtitles"
+    window.active_task_kind = "project_restore"
 
     window._task_failed("boom", "trace")
     window._task_finished()
 
     assert window.pending_project is None
-    assert window.pending_restore_after_scan is False
     assert window.task_status.text() == window.translations.text("task.failed")
     assert "boom" in window.error_panel.toPlainText()
 

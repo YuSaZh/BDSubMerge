@@ -7,9 +7,8 @@ import json
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import redirect_stderr
-from dataclasses import asdict, dataclass, is_dataclass, replace
+from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum, IntEnum
-from itertools import pairwise
 from pathlib import Path
 from typing import Protocol, TextIO
 
@@ -28,17 +27,14 @@ from bdsubmerge.application import (
     MergeReportTarget,
     PreparedMerge,
     PrepareMergeRequest,
+    ProjectRestoreApplicationService,
+    ProjectRestoreRequest,
     ScanRequest,
     ScanResult,
     SubtitleApplicationService,
-    SubtitleInput,
-    build_playlist_boundaries,
 )
-from bdsubmerge.domain.models import PlaylistInfo, PlaylistMarkInfo
-from bdsubmerge.domain.timebase import MediaTick90k
-from bdsubmerge.mapping import MappingLock, TimelineBoundary
-from bdsubmerge.merge import MergeOptions
-from bdsubmerge.output import CollisionPolicy, FullPathOutputTarget, OutputTarget
+from bdsubmerge.domain.models import PlaylistInfo
+from bdsubmerge.output import CollisionPolicy
 from bdsubmerge.project import (
     ProjectSchemaError,
     ProjectSnapshot,
@@ -46,8 +42,6 @@ from bdsubmerge.project import (
     check_project_sources,
     load_project_bytes,
     project_to_data,
-    resolve_output_path,
-    resolve_path,
 )
 from bdsubmerge.runtime_logging import (
     configure_runtime_logging,
@@ -380,274 +374,20 @@ def _prepare_project(
     report_target: MergeReportTarget | None = None,
     accept_low_confidence: bool = False,
 ) -> tuple[PreparedMerge | None, tuple[CliIssue, ...]]:
-    structure_issues = _project_structure_issues(project)
-    if structure_issues:
-        return None, structure_issues
-    bdmv_path = resolve_path(project.bdmv_path, project_file=project_path)
-    scan = services.bdmv.scan(ScanRequest(bdmv_path))
-    if not scan.ready or scan.layout is None:
-        return None, _application_issues(scan.issues)
-    inspected = services.bdmv.inspect(InspectRequest(scan, project.playlist.stem))
-    playlist = inspected.playlist
-    if playlist is None:
-        return None, _application_issues(inspected.issues)
-    if (
-        playlist.timeline_fingerprint != project.playlist.timeline_fingerprint
-        or int(playlist.duration_90k) != project.playlist.duration_90k
-    ):
-        return None, (
-            CliIssue(
-                "error",
-                "playlist_changed",
-                "the scanned playlist timeline no longer matches the project snapshot",
-                str(playlist.path),
-            ),
-        )
-
-    ordered_subtitles = tuple(sorted(project.subtitles, key=lambda item: item.order))
-    subtitle_inputs = tuple(
-        SubtitleInput(
-            resolve_path(item.source.path, project_file=project_path),
-            item.encoding or None,
-        )
-        for item in ordered_subtitles
-    )
-    subtitles = services.subtitles.load_ordered(LoadSubtitlesRequest(subtitle_inputs))
-    if not subtitles.ready:
-        return None, _application_issues(subtitles.issues)
-    playlist = _playlist_with_project_boundaries(project, playlist)
-    output_targets = _output_targets(project, project_path)
-    locks = _mapping_locks(project, playlist)
-    policy = project.conflict_policy
-    prepared = services.merge.prepare(
-        PrepareMergeRequest(
-            scan.layout,
-            playlist,
-            subtitles,
-            output_targets,
-            locks=locks,
-            merge_options=MergeOptions(
-                playlist_end_ticks=project.playlist.duration_90k,
-                accept_script_info_conflicts=policy.accept_script_info_conflicts,
-                keep_events_ending_before_zero=policy.keep_events_ending_before_zero,
-                clip_negative_starts=policy.clip_negative_starts,
-            ),
-            accept_low_confidence=accept_low_confidence,
+    result = ProjectRestoreApplicationService(
+        services.bdmv,
+        services.subtitles,
+        services.merge,
+    ).prepare(
+        ProjectRestoreRequest(
+            project,
+            project_path,
             report_target=report_target,
+            accept_low_confidence=accept_low_confidence,
         )
     )
-    reproduction_issues = _reproduction_issues(
-        project,
-        project_path,
-        prepared,
-    )
-    preliminary = _application_issues((*scan.issues, *inspected.issues, *subtitles.issues))
-    if reproduction_issues:
-        return None, (*preliminary, *reproduction_issues)
-    return prepared, preliminary
-
-
-def _project_structure_issues(project: ProjectSnapshot) -> tuple[CliIssue, ...]:
-    issues: list[CliIssue] = []
-    subtitle_ids = {subtitle.id for subtitle in project.subtitles}
-    mapping_ids = {mapping.subtitle_id for mapping in project.mappings}
-    if not project.subtitles:
-        issues.append(CliIssue("error", "no_subtitles", "project has no subtitles"))
-    elif mapping_ids != subtitle_ids or len(project.mappings) != len(project.subtitles):
-        issues.append(
-            CliIssue(
-                "error",
-                "incomplete_mappings",
-                "project must contain exactly one mapping for every subtitle",
-            )
-        )
-    boundary_times = {boundary.id: boundary.time_90k for boundary in project.boundaries}
-    ordered_mappings = []
-    mapping_by_subtitle = {mapping.subtitle_id: mapping for mapping in project.mappings}
-    for subtitle in sorted(project.subtitles, key=lambda item: item.order):
-        mapping = mapping_by_subtitle.get(subtitle.id)
-        if mapping is None:
-            continue
-        if (
-            boundary_times.get(mapping.start_boundary_id) != mapping.start_90k
-            or boundary_times.get(mapping.end_boundary_id) != mapping.end_90k
-        ):
-            issues.append(
-                CliIssue(
-                    "error",
-                    "mapping_boundary_mismatch",
-                    f"mapping for subtitle {subtitle.id!r} disagrees with its saved boundaries",
-                )
-            )
-        ordered_mappings.append(mapping)
-    for previous, current in pairwise(ordered_mappings):
-        if previous.end_90k > current.start_90k:
-            issues.append(
-                CliIssue(
-                    "error",
-                    "mapping_order_mismatch",
-                    "saved mappings overlap or disagree with subtitle order",
-                )
-            )
-            break
-    orders = tuple(subtitle.order for subtitle in project.subtitles)
-    if len(set(orders)) != len(orders):
-        issues.append(CliIssue("error", "duplicate_order", "subtitle order values must be unique"))
-    if not project.outputs:
-        issues.append(CliIssue("error", "no_outputs", "project has no output targets"))
-    return tuple(issues)
-
-
-def _playlist_with_project_boundaries(
-    project: ProjectSnapshot,
-    playlist: PlaylistInfo,
-) -> PlaylistInfo:
-    """Add exact saved mapping times that are absent from the scanned candidates."""
-    runtime = build_playlist_boundaries(playlist)
-    available_times = {int(item.time_90k) for item in runtime}
-    required_times = {
-        time
-        for mapping in project.mappings
-        for time in (mapping.start_90k, mapping.end_90k)
-    }
-    missing_times = sorted(required_times - available_times)
-    if not missing_times:
-        return playlist
-    next_index = max((mark.index for mark in playlist.marks), default=-1) + 1
-    injected = tuple(
-        _project_boundary_mark(playlist, next_index + offset, time_90k)
-        for offset, time_90k in enumerate(missing_times)
-    )
-    return replace(playlist, marks=(*playlist.marks, *injected))
-
-
-def _project_boundary_mark(
-    playlist: PlaylistInfo,
-    index: int,
-    time_90k: int,
-) -> PlaylistMarkInfo:
-    for item in playlist.play_items:
-        if int(item.logical_start_90k) <= time_90k <= int(item.logical_end_90k):
-            relative_90k = time_90k - int(item.logical_start_90k)
-            return PlaylistMarkInfo(
-                index=index,
-                mark_type=0xFF,
-                play_item_index=item.index,
-                timestamp_45k=item.in_time_45k + relative_90k // 2,
-                time_90k=MediaTick90k(time_90k),
-            )
-    raise ValueError(f"saved mapping time {time_90k} is outside the playlist timeline")
-
-
-def _reproduction_issues(
-    project: ProjectSnapshot,
-    project_path: Path,
-    prepared: PreparedMerge,
-) -> tuple[CliIssue, ...]:
-    if prepared.mapping is None:
-        return ()
-    expected_subtitles = tuple(sorted(project.subtitles, key=lambda item: item.order))
-    expected_by_id = {mapping.subtitle_id: mapping for mapping in project.mappings}
-    actual = prepared.mapping.mappings
-    if len(actual) != len(expected_subtitles):
-        return (
-            CliIssue(
-                "error",
-                "mapping_reproduction_failed",
-                "solver returned a different number of mappings than the project snapshot",
-            ),
-        )
-    issues: list[CliIssue] = []
-    for index, (subtitle, current) in enumerate(zip(expected_subtitles, actual, strict=True)):
-        expected = expected_by_id[subtitle.id]
-        expected_path = resolve_path(subtitle.source.path, project_file=project_path)
-        mismatches: list[str] = []
-        if current.episode_id != f"episode-{index + 1}":
-            mismatches.append("episode order")
-        if Path(current.subtitle_ref) != expected_path:
-            mismatches.append("subtitle source")
-        if int(current.start_boundary.time_90k) != expected.start_90k:
-            mismatches.append("start boundary")
-        if int(current.end_boundary.time_90k) != expected.end_90k:
-            mismatches.append("end boundary")
-        if int(current.manual_offset_90k) != expected.manual_offset_90k:
-            mismatches.append("manual offset")
-        if not current.locked:
-            mismatches.append("lock state")
-        if mismatches:
-            issues.append(
-                CliIssue(
-                    "error",
-                    "mapping_reproduction_failed",
-                    f"subtitle {subtitle.id!r} differs in {', '.join(mismatches)}",
-                    str(expected_path),
-                )
-            )
-    return tuple(issues)
-
-
-def _mapping_locks(
-    project: ProjectSnapshot,
-    playlist: PlaylistInfo,
-) -> tuple[MappingLock, ...]:
-    runtime_boundaries = build_playlist_boundaries(playlist)
-    mapping_by_subtitle = {item.subtitle_id: item for item in project.mappings}
-    locks: list[MappingLock] = []
-    for index, subtitle in enumerate(sorted(project.subtitles, key=lambda item: item.order)):
-        mapping = mapping_by_subtitle.get(subtitle.id)
-        if mapping is None:
-            continue
-        start_id = _boundary_id_for_time(runtime_boundaries, mapping.start_90k)
-        end_id = _boundary_id_for_time(runtime_boundaries, mapping.end_90k)
-        locks.append(
-            MappingLock(
-                f"episode-{index + 1}",
-                start_id,
-                end_id,
-                MediaTick90k(mapping.manual_offset_90k),
-            )
-        )
-    return tuple(locks)
-
-
-def _boundary_id_for_time(
-    boundaries: Sequence[TimelineBoundary],
-    time_90k: int,
-) -> str:
-    matches = sorted(
-        boundary.id
-        for boundary in boundaries
-        if int(boundary.time_90k) == time_90k
-    )
-    if not matches:
-        raise ValueError(f"project mapping time {time_90k} has no saved boundary")
-    return matches[0]
-
-
-def _output_targets(
-    project: ProjectSnapshot,
-    project_path: Path,
-) -> tuple[OutputTarget, ...]:
-    targets: list[OutputTarget] = []
-    for output in project.outputs:
-        if output.resolved_path is None:
-            raise ValueError(f"output {output.id!r} has no resolved path")
-        try:
-            collision = CollisionPolicy(output.collision_policy)
-        except ValueError as error:
-            raise ValueError(
-                f"output {output.id!r} has unsupported collision policy "
-                f"{output.collision_policy!r}"
-            ) from error
-        targets.append(
-            FullPathOutputTarget(
-                output.id,
-                collision_policy=collision,
-                encoding=output.encoding,
-                path=resolve_output_path(output.resolved_path, project_file=project_path),
-            )
-        )
-    return tuple(targets)
+    issues = _application_issues(result.issues)
+    return (result.prepared, issues) if result.ready else (None, issues)
 
 
 def _prepared_data(

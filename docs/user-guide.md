@@ -118,7 +118,15 @@ BDMV locator directory is checked for existence without treating a newly written
 as source mutation.
 
 Changed or missing input blocks CLI validation and merge. Relocate the source explicitly and
-refresh its fingerprint only after confirming it is the intended file. The anonymous
+refresh its fingerprint only after confirming it is the intended file. In the GUI, opening a
+project with unresolved inputs shows every source before any BDMV scan or subtitle load. Locate
+each BDMV directory or source file; exact fingerprint matches are accepted directly, while a
+changed file requires an explicit confirmation whose safe default is No. The project JSON is
+updated atomically only after all sources, the saved MPLS timeline, and subtitle loading succeed.
+Cancel or any failure leaves the current workspace and the original project file unchanged.
+
+The CLI remains non-interactive: `validate` and `merge` report changed or missing sources and
+stop. Complete relocation in the GUI, then rerun the CLI command. The anonymous
 [`examples/minimal.bdsm.json`](../examples/minimal.bdsm.json) demonstrates structure only; its
 placeholder files must be relocated before use.
 

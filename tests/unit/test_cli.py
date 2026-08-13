@@ -24,15 +24,8 @@ from bdsubmerge.application import (
     SubtitleApplicationService,
 )
 from bdsubmerge.cli import CliIssue, CliServices, ExitCode, build_parser, main
-from bdsubmerge.domain.models import (
-    BdmvLayout,
-    PlayItemInfo,
-    PlaylistConfidence,
-    PlaylistInfo,
-    ReferenceStatus,
-)
+from bdsubmerge.domain.models import BdmvLayout, PlaylistConfidence, PlaylistInfo
 from bdsubmerge.domain.timebase import MediaTick90k
-from bdsubmerge.mapping import EpisodeRequest, auto_map_episodes
 from bdsubmerge.output import (
     CollisionPolicy,
     OutputPreset,
@@ -118,31 +111,6 @@ def _project(path: Path) -> ProjectSnapshot:
                 "abort",
             ),
         ),
-    )
-
-
-def _playlist_with_item(path: Path) -> PlaylistInfo:
-    item = PlayItemInfo(
-        0,
-        "00001",
-        "M2TS",
-        0,
-        50,
-        MediaTick90k(0),
-        MediaTick90k(100),
-        0,
-        False,
-        0,
-        1,
-        ReferenceStatus(True, True),
-    )
-    return PlaylistInfo(
-        path / "BDMV" / "PLAYLIST" / "00001.mpls",
-        "00001",
-        MediaTick90k(100),
-        (item,),
-        (),
-        timeline_fingerprint=(("00001", 0, 50, 0),),
     )
 
 
@@ -332,44 +300,6 @@ def test_argparse_usage_error_uses_injected_stderr(
     captured = capsys.readouterr()
     assert "required" in injected.getvalue()
     assert captured.err == ""
-
-
-def test_saved_non_candidate_boundaries_become_exact_ordered_solver_locks(
-    tmp_path: Path,
-) -> None:
-    project = _project(tmp_path)
-    playlist = cli_module._playlist_with_project_boundaries(
-        project,
-        _playlist_with_item(tmp_path),
-    )
-    boundaries = cli_module.build_playlist_boundaries(playlist)
-    locks = cli_module._mapping_locks(project, playlist)
-    result = auto_map_episodes(
-        (
-            EpisodeRequest("episode-1", MediaTick90k(30), str(tmp_path / "01.ass")),
-            EpisodeRequest("episode-2", MediaTick90k(40), str(tmp_path / "02.ass")),
-        ),
-        boundaries,
-        locks=locks,
-    )
-    assert [
-        (
-            int(mapping.start_boundary.time_90k),
-            int(mapping.end_boundary.time_90k),
-            int(mapping.manual_offset_90k),
-            mapping.locked,
-        )
-        for mapping in result.mappings
-    ] == [(10, 40, 7, True), (50, 90, -3, True)]
-
-    prepared = cli_module.PreparedMerge(result, None, None, None, ())
-    assert cli_module._reproduction_issues(project, tmp_path / "show.bdsm.json", prepared) == ()
-    changed_mapping = replace(result.mappings[0], manual_offset_90k=MediaTick90k(8))
-    changed_result = replace(result, mappings=(changed_mapping, result.mappings[1]))
-    changed = cli_module.PreparedMerge(changed_result, None, None, None, ())
-    issues = cli_module._reproduction_issues(project, tmp_path / "show.bdsm.json", changed)
-    assert issues[0].code == "mapping_reproduction_failed"
-    assert "manual offset" in issues[0].message
 
 
 def test_prepared_output_reports_original_stored_preset(tmp_path: Path) -> None:

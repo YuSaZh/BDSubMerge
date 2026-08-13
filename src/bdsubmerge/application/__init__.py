@@ -26,6 +26,13 @@ from .playlist_selection import (
     PlaylistSelectionResult,
     select_playlists,
 )
+from .project_restore import (
+    ProjectRestoreApplicationService,
+    ProjectRestoreRequest,
+    ProjectRestoreResult,
+    ProjectScanIdentityResult,
+    verify_project_scan_identity,
+)
 from .reporting import (
     MergeExecutionReport,
     MergeReportFormat,
@@ -74,6 +81,10 @@ __all__ = [
     "PrepareMergeRequest",
     "PreparedMerge",
     "PreparedSource",
+    "ProjectRestoreApplicationService",
+    "ProjectRestoreRequest",
+    "ProjectRestoreResult",
+    "ProjectScanIdentityResult",
     "ReportEpisode",
     "ReportNotice",
     "ReportPlayItem",
@@ -90,4 +101,5 @@ __all__ = [
     "discover_subtitle_paths",
     "natural_path_key",
     "select_playlists",
+    "verify_project_scan_identity",
 ]

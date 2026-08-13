@@ -127,6 +127,12 @@ class ProjectSourceRelocationService:
             candidate = _inspect_candidate(request.selected_path, source)
         except OSError as error:
             raise ProjectSourceRelocationError(str(error)) from error
+        _validate_selected_path(
+            request.project,
+            request.source_id,
+            request.selected_path,
+            project_file=request.project_file,
+        )
         if candidate.requires_confirmation and not request.confirm_changed_source:
             raise RelocationConfirmationRequiredError(
                 f"source {request.source_id!r} does not match its saved fingerprint"
@@ -138,6 +144,18 @@ class ProjectSourceRelocationService:
             project_file=request.project_file,
             refresh_fingerprint=True,
         )
+        if not source.is_directory:
+            refreshed = _project_source(relocated, request.source_id).snapshot.fingerprint
+            if refreshed != candidate.actual:
+                raise ProjectSourceRelocationError(
+                    f"source {request.source_id!r} changed while applying relocation"
+                )
+        if request.source_id == "bdmv":
+            relocated = _relocate_bdmv_children(
+                relocated,
+                candidate.path,
+                project_file=request.project_file,
+            )
         restored = restore_project_state(relocated, project_file=request.project_file)
         relocated_check = next(
             check for check in restored.source_checks if check.id == request.source_id
@@ -213,6 +231,95 @@ def _inspect_candidate(path: Path, source: _ProjectSource) -> RelocationCandidat
         else SourceState.CHANGED
     )
     return RelocationCandidate(path, actual, state)
+
+
+def _validate_selected_path(
+    project: ProjectSnapshot,
+    source_id: str,
+    path: Path,
+    *,
+    project_file: Path,
+) -> None:
+    if source_id == "bdmv":
+        if path.name.casefold() != "bdmv":
+            raise ProjectSourceRelocationError(
+                f"relocated BDMV source must be a BDMV directory: {path}"
+            )
+        return
+    if source_id == "index_bdmv":
+        if path.name.casefold() != "index.bdmv":
+            raise ProjectSourceRelocationError(
+                f"relocated index source must be named index.bdmv: {path}"
+            )
+        expected_bdmv = check_directory(
+            "bdmv",
+            project.bdmv,
+            project_file=project_file,
+        ).path
+        if not _same_path(path.parent, expected_bdmv):
+            raise ProjectSourceRelocationError(
+                f"relocated index source must belong to the selected BDMV: {path}"
+            )
+        return
+    if source_id == "playlist":
+        if path.suffix.casefold() != ".mpls":
+            raise ProjectSourceRelocationError(
+                f"relocated playlist source must be an MPLS file: {path}"
+            )
+        if path.stem.casefold() != project.playlist.stem.casefold():
+            raise ProjectSourceRelocationError(
+                "relocated playlist source must keep the saved playlist stem: "
+                f"{path}"
+            )
+        expected_bdmv = check_directory(
+            "bdmv",
+            project.bdmv,
+            project_file=project_file,
+        ).path
+        if (
+            path.parent.name.casefold() != "playlist"
+            or not _same_path(path.parent.parent, expected_bdmv)
+        ):
+            raise ProjectSourceRelocationError(
+                f"relocated playlist source must belong to BDMV/PLAYLIST: {path}"
+            )
+        return
+    subtitle = next(item for item in project.subtitles if item.id == source_id)
+    expected_suffix = f".{subtitle.format.casefold()}"
+    if path.suffix.casefold() != expected_suffix:
+        raise ProjectSourceRelocationError(
+            f"relocated subtitle must keep the saved {subtitle.format} format: {path}"
+        )
+
+
+def _relocate_bdmv_children(
+    project: ProjectSnapshot,
+    bdmv: Path,
+    *,
+    project_file: Path,
+) -> ProjectSnapshot:
+    """Move coupled media locators while preserving their saved fingerprints."""
+
+    relocated = relocate_source(
+        project,
+        "index_bdmv",
+        bdmv / "index.bdmv",
+        project_file=project_file,
+    )
+    return relocate_source(
+        relocated,
+        "playlist",
+        bdmv / "PLAYLIST" / f"{project.playlist.stem}.mpls",
+        project_file=project_file,
+    )
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    left_value = str(left.absolute())
+    right_value = str(right.absolute())
+    if os.name == "nt":
+        return left_value.casefold() == right_value.casefold()
+    return left_value == right_value
 
 
 def _path_identity(path: Path) -> str:

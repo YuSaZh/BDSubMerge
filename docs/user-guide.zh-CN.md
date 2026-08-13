@@ -108,7 +108,14 @@ Fingerprint、有序字幕及编码、边界、锁定映射和微调、输出/�
 `index.ass` 不会被误判为原盘源变化。
 
 changed 或 missing 会阻止 CLI 验证和合并。确认文件身份后，应显式重定位并刷新指纹。
-匿名示例 [`examples/minimal.bdsm.json`](../examples/minimal.bdsm.json) 仅展示结构，其中的
+GUI 打开存在未解决输入的项目时，会在扫描 BDMV 或加载字幕之前列出全部项目源。逐项
+定位 BDMV 目录或源文件；指纹精确匹配会直接接受，changed 文件则必须明确确认，且
+确认框默认选择“否”。只有全部源、保存的 MPLS 时间线和字幕加载均验证成功后，项目
+JSON 才会原子更新；取消或任何失败均保留当前工作区和原项目文件不变。
+
+CLI 保持非交互：`validate` 和 `merge` 遇到 changed 或 missing 会报告并停止。请先在 GUI
+完成重定位，再重新执行 CLI 命令。匿名示例
+[`examples/minimal.bdsm.json`](../examples/minimal.bdsm.json) 仅展示结构，其中的
 占位源文件必须先重定位，不能直接用于合并。
 
 ## 8. CLI 参考
