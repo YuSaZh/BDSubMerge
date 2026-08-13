@@ -34,6 +34,7 @@ from bdsubmerge.mapping import (
     MappingLock,
     MappingResult,
 )
+from bdsubmerge.merge import MergeNotice, MergeReport
 from bdsubmerge.output import (
     CollisionPolicy,
     OutputPreset,
@@ -254,6 +255,171 @@ def test_preflight_displays_full_resolved_target_path(qtbot: QtBot, tmp_path: Pa
     window._preflight_finished(prepared)
 
     assert str(target) in window.preflight_summary.toPlainText()
+
+
+def test_preflight_displays_expected_counts_and_warning_summary(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    report = MergeReport(
+        ("episode",),
+        4,
+        3,
+        notices=(MergeNotice("warning", "review", "review output"),),
+        output_style_count=2,
+    )
+    prepared = PreparedMerge(
+        mapping=None,
+        output_preflight=None,
+        report=report,
+        payload=None,
+        issues=(
+            ApplicationIssue(ApplicationSeverity.WARNING, "merge_review", "review output"),
+        ),
+    )
+
+    window._preflight_finished(prepared)
+
+    summary = window.preflight_summary.toPlainText()
+    assert "预计事件数：3" in summary
+    assert "预计样式数：2" in summary
+    assert "警告数：1" in summary
+
+
+def test_playlist_double_click_opens_localized_read_only_structure(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    window._scan_finished(_scan_result(tmp_path))
+
+    window.playlist_table.cellDoubleClicked.emit(0, 0)
+
+    dialog = window.details_dialog
+    assert dialog is not None
+    assert dialog.isVisible()
+    assert dialog.windowTitle() == "播放列表 00001 结构"
+    assert "PlayItem（0）" in dialog.details.toPlainText()
+    assert dialog.details.isReadOnly()
+
+
+def test_subtitle_double_click_shows_loaded_source_analysis(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window, subtitle, _prepared = _prepared_mapping_window(qtbot, tmp_path)
+    assert window.subtitle_result is not None
+    window.subtitle_result = replace(
+        window.subtitle_result,
+        issues=(
+            ApplicationIssue(
+                ApplicationSeverity.WARNING,
+                "subtitle_long_tail",
+                "effective duration excludes a suspected long-tail event",
+                str(subtitle),
+            ),
+        ),
+    )
+
+    window.mapping_table.cellDoubleClicked.emit(0, 1)
+
+    dialog = window.details_dialog
+    assert dialog is not None
+    assert dialog.isVisible()
+    assert subtitle.name in dialog.windowTitle()
+    details = dialog.details.toPlainText()
+    assert "事件数: 1" in details
+    assert "样式数: 1" in details
+    assert "文件名: episode.ass" in details
+    assert "警告（1）" in details
+    assert "已排除疑似超长尾事件计算有效时长" in details
+    assert str(subtitle) in details
+
+
+def test_output_target_table_shows_complete_localized_summary(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    subtitle = tmp_path / "episode.ass"
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    asset = SubtitleAsset(
+        subtitle,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+        "utf-8",
+    )
+    target = tmp_path / "merged.ass"
+    window.subtitle_result = LoadSubtitlesResult((asset,), SubtitleFormat.ASS)
+    window.output_states = [
+        OutputState(
+            "primary",
+            "full_path",
+            "",
+            target,
+            "utf-8-sig",
+            CollisionPolicy.BACKUP.value,
+            "backup",
+        )
+    ]
+
+    window._populate_output_targets()
+
+    assert window.output_targets_table.columnCount() == 7
+    assert tuple(
+        window.output_targets_table.horizontalHeaderItem(column).text()
+        for column in range(7)
+    ) == (
+        "目标 ID",
+        "输出模式",
+        "完整目标路径",
+        "输出格式",
+        "编码",
+        "冲突策略",
+        "备份",
+    )
+    assert tuple(
+        window.output_targets_table.item(0, column).text()
+        for column in range(7)
+    ) == (
+        "primary",
+        "完整文件路径",
+        str(target),
+        "ass",
+        "utf-8-sig",
+        "覆盖前备份",
+        "是",
+    )
+
+
+def test_loading_subtitles_refreshes_output_format_summary(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    assert window.output_targets_table.item(0, 3).text() == "未知"
+    subtitle = tmp_path / "episode.ass"
+    document = parse_ass(
+        "[Script Info]\n[V4+ Styles]\nFormat: Name\nStyle: Default\n"
+        "[Events]\nFormat: Start, End, Style, Text\n"
+        "Dialogue: 0:00:00.00,0:00:01.00,Default,line\n"
+    )
+    asset = SubtitleAsset(
+        subtitle,
+        SubtitleFormat.ASS,
+        document,
+        TextSubtitleInfo(1, 1, 0, 90_000, 90_000, False),
+        "utf-8",
+    )
+
+    window._subtitles_finished(LoadSubtitlesResult((asset,), SubtitleFormat.ASS))
+
+    assert window.output_targets_table.item(0, 3).text() == "ass"
 
 
 def test_ac08_low_confidence_is_visible_and_requires_confirmation(

@@ -37,6 +37,7 @@ def test_ass_merge_keeps_source_order_shifts_comments_and_renames_styles() -> No
     assert result.document.events[1].value("Style") == "Default__E02"
     assert result.document.events[1].value("Text") == r"{\rDefault__E02}line"
     assert result.report.output_event_count == 3
+    assert result.report.output_style_count == 2
     assert result.report.style_renames[0].new_name == "Default__E02"
 
 

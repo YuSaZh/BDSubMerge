@@ -1,12 +1,17 @@
 # 发现与决策
 
 ## 需求
+- 任务书 9.3 要求每个源字幕可查看文件名、格式、编码、事件数、样式数、最早开始、原始/有效结束、PlayRes、字体/图形附件、Aegisub Extradata 与警告数量；19.3 要求播放列表双击查看结构；19.5 要求输出区域显示完整路径、编码、冲突策略、备份、输出格式、预计事件/样式数量和警告摘要。
 - 工具面向 Windows 11，输入 BDMV/PLAYLIST/MPLS/index.bdmv，输出外置 ASS/SSA/SRT/SUP。
 - 任务书要求自动播放列表推荐、分集字幕映射、可视化时间线、多输出目标、项目复现和 CLI。
 - UI 默认简体中文并支持英文，耗时任务必须在后台运行。
 - 本机禁止构建、测试、lint、类型检查、依赖安装和打包；本机只做源码检查、静态搜索、Git 操作与 `git diff --check`，所有执行型验证必须提交并推送到 GitHub Actions。
 
 ## 研究发现
+- 2026-08-13 继续开发时，`main` 与 `origin/main` 均为 `251424a`，工作树除 `task_plan.md`、`findings.md`、`progress.md` 外无未提交文件；`application/display_models.py` 已有 Qt 无关的播放列表/字幕详情投影，但 GUI 尚未接入，下一批必须以任务书原文和现有 UI 状态机为准补齐。
+- 已有 `format_playlist_structure` / `format_subtitle_details` 包含英文硬编码；双语 GUI 不应复用其最终文本，而应消费对应 dataclass 后在 UI 层翻译和格式化。
+- 输出目标表原先只有 ID、模式、路径和冲突策略，任务书 19.5 还要求编码、是否备份和输出格式；本批扩为 7 列，并让路径列独占伸缩空间，便于同时扫描多个目标。
+- 字幕表支持重排，详情必须通过表格 `UserRole` 中的路径定位 `SubtitleAsset`，不能直接以可见行号索引初始资产；源级 warning 可通过 `ApplicationIssue.source` 精确归属。
 - GitHub 仓库为 `YuSaZh/BDSubMerge`，远端使用 SSH；Git/GitHub 操作应直接调用本机现有凭据，不启动浏览器登录。
 - 当前已推送 M5 核心远程验证：run `31627068738` 的 Ubuntu、Windows、源码包任务全部成功。
 - M1-M4 的领域逻辑与输出边界已经实现，当前缺口集中在 M5 集成、CLI、UI、打包与完整验收。
@@ -33,6 +38,8 @@
 - 静态审计确认 `application/display_models.py` 已有播放列表结构和字幕详情投影，但 GUI 未调用；预检摘要也只显示路径和 issue，未显示任务书要求的预计事件数、样式数和警告摘要。阶段 5 对这三项的完成标记已撤回。
 - 新项目打开必须两阶段提交：扫描失败时旧工作区和旧 `project_path` 均保留；扫描成功即解除旧项目关联；只有字幕恢复完整成功才绑定新项目路径，后续失败或缺失时强制另存为。
 - run `31674853072` 的源码包、Ubuntu/Windows Ruff 与 Mypy 均通过；两平台 Pytest 唯一失败均为 `test_adding_directory_preserves_manual_order_and_appends_naturally` 的 `load_ordered` 测试替身未接受新增 `cancellation_check` 关键字。Ubuntu 为 254 项中 1 失败、2 跳过，Windows 为 254 项中 1 失败；Windows 真实 SMB/UNC 建立和清理正常，截图因 Pytest 失败而跳过。
+- commit `251424a` / run `31675293315` 已闭环实际任务进度批次：源码包、双平台 Ruff/Mypy/Pytest、真实 Windows SMB/UNC 和四态 UI 截图均通过。JUnit 为 Ubuntu 254 项（2 skipped）和 Windows 254 项；coverage XML 行覆盖率分别为 87.05% 与 87.03%，终端综合覆盖率为 83.31%。四张截图哈希互异，人工审计无重叠、截断或 CJK 缺字。
+- 当前详情批次已静态补齐播放列表结构、源字幕详情、输出目标完整字段，以及预计事件/样式/警告摘要；未跟踪新文件不会出现在普通 `git diff` 中，提交前必须显式读取并在暂存后用 `git diff --cached` 复核。
 
 ## 技术决策
 | 决策 | 理由 |

@@ -32,6 +32,7 @@ class MergeReport:
     notices: tuple[MergeNotice, ...] = ()
     metadata: dict[str, str | int | bool] = field(default_factory=dict)
     attachment_deduplicated_count: int = 0
+    output_style_count: int = 0
 
     @property
     def errors(self) -> tuple[MergeNotice, ...]:

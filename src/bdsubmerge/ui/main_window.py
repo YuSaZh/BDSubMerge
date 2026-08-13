@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 
 from bdsubmerge.application import (
     ApplicationIssue,
+    ApplicationSeverity,
     BdmvApplicationService,
     ExecuteMergeRequest,
     ExecuteMergeResult,
@@ -71,10 +72,15 @@ from bdsubmerge.application import (
     ScanRequest,
     ScanResult,
     SubtitleApplicationService,
+    SubtitleAsset,
     SubtitleInput,
     build_playlist_boundaries,
     natural_path_key,
     select_playlists,
+)
+from bdsubmerge.application.display_models import (
+    build_playlist_structure,
+    build_subtitle_details,
 )
 from bdsubmerge.domain.models import PlaylistInfo
 from bdsubmerge.domain.timebase import MediaTick90k
@@ -106,7 +112,13 @@ from bdsubmerge.project import (
     SourceState,
     SubtitleState,
 )
+from bdsubmerge.subtitles import SubtitleFormat
 
+from .details import (
+    ReadOnlyDetailsDialog,
+    format_playlist_details,
+    format_subtitle_details,
+)
 from .project_io import capture_and_save, load_restored_project, qt_atomic_project_writer
 from .tasks import CancellationToken, ServiceTask
 from .theme import ThemeMode, apply_theme
@@ -231,6 +243,7 @@ class MainWindow(QMainWindow):
         self.active_task_kind = ""
         self.task_failed = False
         self.task_cancelled = False
+        self.details_dialog: ReadOnlyDetailsDialog | None = None
 
         self.setAcceptDrops(True)
         self.setMinimumSize(980, 700)
@@ -398,7 +411,7 @@ class MainWindow(QMainWindow):
         output_editor = QVBoxLayout()
         output_editor.addLayout(output_form)
         self.output_targets_label = QLabel()
-        self.output_targets_table = QTableWidget(0, 4)
+        self.output_targets_table = QTableWidget(0, 7)
         self.output_targets_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
         )
@@ -411,7 +424,11 @@ class MainWindow(QMainWindow):
         self.output_targets_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents
         )
-        self.output_targets_table.horizontalHeader().setStretchLastSection(True)
+        self.output_targets_table.horizontalHeader().setSectionResizeMode(
+            2,
+            QHeaderView.ResizeMode.Stretch,
+        )
+        self.output_targets_table.horizontalHeader().setStretchLastSection(False)
         self.output_targets_table.setMaximumHeight(130)
         output_target_actions = QHBoxLayout()
         self.add_output_target_button = QPushButton()
@@ -537,6 +554,7 @@ class MainWindow(QMainWindow):
             self.theme_menu.addAction(action)
         self.menuBar().addMenu(self.settings_menu)
         self.playlist_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.mapping_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def _connect_signals(self) -> None:
         self.choose_path_button.clicked.connect(self.choose_bdmv)
@@ -546,6 +564,7 @@ class MainWindow(QMainWindow):
         self.path_edit.returnPressed.connect(self.start_scan)
         self.playlist_search.textChanged.connect(self.filter_playlists)
         self.playlist_table.itemSelectionChanged.connect(self.select_playlist)
+        self.playlist_table.cellDoubleClicked.connect(self.show_playlist_details)
         self.primary_playlist_combo.currentIndexChanged.connect(
             self.select_primary_playlist
         )
@@ -565,6 +584,7 @@ class MainWindow(QMainWindow):
         self.offset_button.clicked.connect(self.apply_batch_offset)
         self.lock_button.clicked.connect(self.toggle_rows_locked)
         self.reset_mapping_button.clicked.connect(self.reset_automatic_mapping)
+        self.mapping_table.cellDoubleClicked.connect(self.show_subtitle_details)
         self.mapping_table.itemSelectionChanged.connect(
             self.select_timeline_episode_from_table
         )
@@ -605,6 +625,7 @@ class MainWindow(QMainWindow):
         self.timeline.episode_boundary_moved.connect(self.move_episode_boundary)
         self.mapping_preflight_timer.timeout.connect(self.start_preflight)
         self.playlist_table.customContextMenuRequested.connect(self.show_playlist_context_menu)
+        self.mapping_table.customContextMenuRequested.connect(self.show_subtitle_context_menu)
         self.language_zh.triggered.connect(lambda: self.set_language("zh_CN"))
         self.language_en.triggered.connect(lambda: self.set_language("en_US"))
         self.theme_system.triggered.connect(lambda: self.set_theme(ThemeMode.SYSTEM))
@@ -677,7 +698,10 @@ class MainWindow(QMainWindow):
                 tr("output.target_id"),
                 tr("output.mode"),
                 tr("output.path"),
+                tr("output.format"),
+                tr("output.encoding"),
                 tr("output.collision"),
+                tr("output.backup"),
             )
         )
         self.add_output_target_button.setText(tr("output.add_target"))
@@ -996,6 +1020,16 @@ class MainWindow(QMainWindow):
 
     def _populate_output_targets(self) -> None:
         selected_id = self.editing_output_id
+        subtitle_format = (
+            self.subtitle_result.format
+            if self.subtitle_result is not None
+            else None
+        )
+        output_format = (
+            subtitle_format.value
+            if subtitle_format is not None
+            else self.translations.text("common.unknown")
+        )
         self.output_targets_table.blockSignals(True)
         self.output_targets_table.setRowCount(0)
         selected_row = 0
@@ -1005,11 +1039,28 @@ class MainWindow(QMainWindow):
             mode_label = (
                 self.output_mode.itemText(mode_index) if mode_index >= 0 else state.preset
             )
+            collision_index = self.collision_policy.findData(state.collision_policy)
+            collision_label = (
+                self.collision_policy.itemText(collision_index)
+                if collision_index >= 0
+                else state.collision_policy
+            )
             values = (
                 state.id,
                 mode_label,
                 str(state.resolved_path or ""),
-                state.collision_policy,
+                output_format,
+                (
+                    self.translations.text("common.binary")
+                    if subtitle_format is SubtitleFormat.SUP
+                    else state.encoding
+                ),
+                collision_label,
+                self.translations.text(
+                    "common.yes"
+                    if state.collision_policy == CollisionPolicy.BACKUP.value
+                    else "common.no"
+                ),
             )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -1519,33 +1570,39 @@ class MainWindow(QMainWindow):
 
     @Slot(QPoint)
     def show_playlist_context_menu(self, position: QPoint) -> None:
-        if self.selected_playlist is None:
+        row = self.playlist_table.rowAt(position.y())
+        playlist = self._playlist_at_row(row)
+        if playlist is None:
             return
         menu = QMenu(self)
+        details_action = menu.addAction(self.translations.text("playlist.details"))
         export_action = menu.addAction(self.translations.text("playlist.export"))
         selected = menu.exec(self.playlist_table.viewport().mapToGlobal(position))
-        if selected is export_action:
-            self.export_playlist_info()
+        if selected is details_action:
+            self._show_playlist_details(playlist)
+        elif selected is export_action:
+            self.export_playlist_info(playlist)
 
-    def export_playlist_info(self) -> None:
-        if self.selected_playlist is None:
+    def export_playlist_info(self, playlist: PlaylistInfo | None = None) -> None:
+        playlist = playlist or self.selected_playlist
+        if playlist is None:
             return
         chosen, _ = QFileDialog.getSaveFileName(
             self,
             self.translations.text("playlist.export_title"),
-            f"{self.selected_playlist.stem}.json",
+            f"{playlist.stem}.json",
             "JSON (*.json)",
         )
         if not chosen:
             return
         data = {
-            "path": str(self.selected_playlist.path),
-            "stem": self.selected_playlist.stem,
-            "duration_90k": int(self.selected_playlist.duration_90k),
-            "score": self.selected_playlist.score,
-            "confidence": self.selected_playlist.confidence.value,
-            "warnings": list(self.selected_playlist.warnings),
-            "errors": list(self.selected_playlist.errors),
+            "path": str(playlist.path),
+            "stem": playlist.stem,
+            "duration_90k": int(playlist.duration_90k),
+            "score": playlist.score,
+            "confidence": playlist.confidence.value,
+            "warnings": list(playlist.warnings),
+            "errors": list(playlist.errors),
             "play_items": [
                 {
                     "index": item.index,
@@ -1556,7 +1613,7 @@ class MainWindow(QMainWindow):
                     "logical_end_90k": int(item.logical_end_90k),
                     "selected_angle": item.selected_angle,
                 }
-                for item in self.selected_playlist.play_items
+                for item in playlist.play_items
             ],
             "marks": [
                 {
@@ -1564,10 +1621,10 @@ class MainWindow(QMainWindow):
                     "play_item_index": mark.play_item_index,
                     "time_90k": int(mark.time_90k) if mark.time_90k is not None else None,
                 }
-                for mark in self.selected_playlist.marks
+                for mark in playlist.marks
             ],
             "timeline_fingerprint": [
-                list(item) for item in self.selected_playlist.timeline_fingerprint
+                list(item) for item in playlist.timeline_fingerprint
             ],
         }
         try:
@@ -1577,6 +1634,89 @@ class MainWindow(QMainWindow):
             )
         except OSError as error:
             self._record_error(str(error))
+
+    @Slot(int, int)
+    def show_playlist_details(self, row: int, _column: int) -> None:
+        playlist = self._playlist_at_row(row)
+        if playlist is not None:
+            self._show_playlist_details(playlist)
+
+    def _playlist_at_row(self, row: int) -> PlaylistInfo | None:
+        if self.scan_result is None or row < 0:
+            return None
+        item = self.playlist_table.item(row, 0)
+        stem = item.text() if item is not None else ""
+        return next(
+            (playlist for playlist in self.scan_result.playlists if playlist.stem == stem),
+            None,
+        )
+
+    def _show_playlist_details(self, playlist: PlaylistInfo) -> None:
+        details = build_playlist_structure(playlist)
+        self._show_details(
+            self.translations.text("playlist.details_title", stem=playlist.stem),
+            format_playlist_details(details, self.translations.text),
+        )
+
+    @Slot(QPoint)
+    def show_subtitle_context_menu(self, position: QPoint) -> None:
+        row = self.mapping_table.rowAt(position.y())
+        if self._subtitle_asset_at_row(row) is None:
+            return
+        menu = QMenu(self)
+        details_action = menu.addAction(self.translations.text("subtitles.details"))
+        if menu.exec(self.mapping_table.viewport().mapToGlobal(position)) is details_action:
+            self.show_subtitle_details(row, 0)
+
+    @Slot(int, int)
+    def show_subtitle_details(self, row: int, _column: int) -> None:
+        result = self.subtitle_result
+        if result is None:
+            return
+        asset = self._subtitle_asset_at_row(row)
+        if asset is None:
+            return
+        warnings = [
+            self._subtitle_issue_text(issue)
+            for issue in result.issues
+            if issue.severity is ApplicationSeverity.WARNING
+            and issue.source == str(asset.path)
+        ]
+        details = build_subtitle_details(asset, warnings=tuple(warnings))
+        self._show_details(
+            self.translations.text("subtitles.details_title", filename=asset.path.name),
+            format_subtitle_details(details, self.translations.text),
+        )
+
+    def _subtitle_asset_at_row(self, row: int) -> SubtitleAsset | None:
+        if self.subtitle_result is None:
+            return None
+        path = self._row_path(row)
+        return next(
+            (asset for asset in self.subtitle_result.assets if asset.path == path),
+            None,
+        )
+
+    def _subtitle_issue_text(self, issue: ApplicationIssue) -> str:
+        key = {
+            "subtitle_long_tail": "details.warning_long_tail",
+            "sup_duration_estimated": "details.warning_duration_estimated",
+        }.get(issue.code)
+        return self.translations.text(key) if key is not None else issue.message
+
+    def _show_details(self, title: str, text: str) -> None:
+        if self.details_dialog is not None:
+            self.details_dialog.close()
+            self.details_dialog.deleteLater()
+        self.details_dialog = ReadOnlyDetailsDialog(
+            title,
+            text,
+            self.translations.text("common.close"),
+            self,
+        )
+        self.details_dialog.show()
+        self.details_dialog.raise_()
+        self.details_dialog.activateWindow()
 
     @Slot(str)
     def filter_playlists(self, text: str) -> None:
@@ -1674,6 +1814,7 @@ class MainWindow(QMainWindow):
             self.translations.text("status.subtitle_complete", count=len(result.assets)), 6000
         )
         self.refresh_output_path()
+        self._populate_output_targets()
         self._update_actions()
 
     def _populate_mapping_table(self) -> None:
@@ -1719,6 +1860,7 @@ class MainWindow(QMainWindow):
             self._clear_mapping_constraints()
             self.mapping_dirty = False
             self._invalidate_preflight(preserve_mapping=False)
+            self._populate_output_targets()
 
     def _reload_subtitles(self) -> None:
         if self.active_task is not None or not self.subtitle_paths:
@@ -2657,6 +2799,28 @@ class MainWindow(QMainWindow):
             lines.append(self.translations.text("preflight.report"))
             lines.extend(
                 f"- {output.path}" for output in prepared.report_preflight.outputs
+            )
+        if prepared.report is not None:
+            warning_count = sum(
+                issue.severity is ApplicationSeverity.WARNING
+                for issue in prepared.issues
+            )
+            lines.extend(
+                (
+                    self.translations.text("preflight.summary"),
+                    self.translations.text(
+                        "preflight.expected_events",
+                        count=prepared.report.output_event_count,
+                    ),
+                    self.translations.text(
+                        "preflight.expected_styles",
+                        count=prepared.report.output_style_count,
+                    ),
+                    self.translations.text(
+                        "preflight.warning_count",
+                        count=warning_count,
+                    ),
+                )
             )
         lines.extend(
             f"[{issue.severity.value}] {issue.code}: {issue.message}" for issue in prepared.issues

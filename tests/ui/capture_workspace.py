@@ -138,10 +138,35 @@ def _populate_workspace(window: MainWindow, destination: Path) -> None:
 
 
 def _assert_workspace_ready(window: MainWindow) -> None:
-    if window.prepared is None or not window.prepared.ready:
+    prepared = window.prepared
+    if prepared is None or not prepared.ready or prepared.report is None:
         raise RuntimeError("workspace screenshot does not show a ready preflight")
     if window.mapping_table.rowCount() != 2:
         raise RuntimeError("workspace screenshot must show two mapped subtitles")
+    expected_output_headers = tuple(
+        window.translations.text(key)
+        for key in (
+            "output.target_id",
+            "output.mode",
+            "output.path",
+            "output.format",
+            "output.encoding",
+            "output.collision",
+            "output.backup",
+        )
+    )
+    output_headers = tuple(
+        window.output_targets_table.horizontalHeaderItem(column).text()
+        for column in range(window.output_targets_table.columnCount())
+    )
+    if output_headers != expected_output_headers:
+        raise RuntimeError("workspace output summary columns are incomplete")
+    output_values = tuple(
+        window.output_targets_table.item(0, column).text()
+        for column in range(window.output_targets_table.columnCount())
+    )
+    if not all(output_values):
+        raise RuntimeError("workspace output summary values are incomplete")
     for row in range(window.mapping_table.rowCount()):
         start = window.mapping_table.cellWidget(row, 4)
         end = window.mapping_table.cellWidget(row, 5)
@@ -167,6 +192,14 @@ def _assert_workspace_ready(window: MainWindow) -> None:
     summary = window.preflight_summary.toPlainText()
     required = (
         window.translations.text("preflight.ready"),
+        window.translations.text(
+            "preflight.expected_events",
+            count=prepared.report.output_event_count,
+        ),
+        window.translations.text(
+            "preflight.expected_styles",
+            count=prepared.report.output_style_count,
+        ),
         "index.ass",
         "merge-report.json",
     )

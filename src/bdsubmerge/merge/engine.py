@@ -486,6 +486,7 @@ def _merge_ass(plan: MergePlan[AssDocument]) -> AssMergeResult:
         tuple(rename_records),
         tuple(notices),
         attachment_deduplicated_count=attachment_deduplicated,
+        output_style_count=len(styles),
     )
     return AssMergeResult(document, report)
 
