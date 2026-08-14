@@ -1,5 +1,5 @@
 {
-  "app.title": "BDSubMerge - 原盘字幕合并",
+  "app.title": "BDSubMerge",
   "path.label": "原盘路径",
   "path.choose": "选择",
   "path.scan": "重新扫描",
@@ -189,6 +189,8 @@
   "settings.language": "语言",
   "settings.theme": "主题",
   "settings.menu": "设置",
+  "about.menu": "关于",
+  "about.homepage": "项目主页",
   "language.zh": "简体中文",
   "language.en": "English",
   "theme.system": "跟随系统",

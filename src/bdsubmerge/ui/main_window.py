@@ -16,12 +16,14 @@ from PySide6.QtCore import (
     Qt,
     QThreadPool,
     QTimer,
+    QUrl,
     Signal,
     Slot,
 )
 from PySide6.QtGui import (
     QAction,
     QCloseEvent,
+    QDesktopServices,
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
@@ -150,6 +152,22 @@ from .timeline import (
 )
 from .translations import TranslationCatalog
 
+PROJECT_HOMEPAGE = QUrl("https://github.com/YuSaZh/BDSubMerge")
+
+
+class NumericTableWidgetItem(QTableWidgetItem):
+    """Table item with a numeric sort key and independently formatted text."""
+
+    def __init__(self, text: str, sort_value: int) -> None:
+        super().__init__(text)
+        self.sort_value = sort_value
+
+    @override
+    def __lt__(self, other: QTableWidgetItem) -> bool:
+        if isinstance(other, NumericTableWidgetItem):
+            return self.sort_value < other.sort_value
+        return super().__lt__(other)
+
 
 class ResponsiveTableWidget(QTableWidget):
     resized = Signal()
@@ -231,6 +249,7 @@ class MainWindow(QMainWindow):
         self.settings = settings or QSettings()
         locale = str(self.settings.value("ui/language", "zh_CN"))
         self.translations = TranslationCatalog(locale)
+        self._url_opener: Callable[[QUrl], bool] = QDesktopServices.openUrl
         self.thread_pool = QThreadPool.globalInstance()
         self.active_task: ServiceTask[object] | None = None
         self.cancellation: CancellationToken | None = None
@@ -383,6 +402,7 @@ class MainWindow(QMainWindow):
         self.offset_spin.setRange(-3_600_000, 3_600_000)
         self.offset_spin.setSuffix(" ms")
         self.offset_spin.setKeyboardTracking(False)
+        self.offset_spin.setAccelerated(True)
         self._set_compact_offset_width(self.offset_spin)
         self.lock_button = QPushButton()
         self.reset_mapping_button = QPushButton()
@@ -604,6 +624,14 @@ class MainWindow(QMainWindow):
             action.setCheckable(True)
             self.theme_menu.addAction(action)
         self.menuBar().addMenu(self.settings_menu)
+        self.about_menu = QMenu(self)
+        self.project_homepage_action = QAction(self)
+        self.author_action = QAction("@YuSaZh", self)
+        self.author_action.setEnabled(False)
+        self.about_menu.addAction(self.project_homepage_action)
+        self.about_menu.addSeparator()
+        self.about_menu.addAction(self.author_action)
+        self.menuBar().addMenu(self.about_menu)
         self.playlist_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.mapping_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
@@ -688,6 +716,7 @@ class MainWindow(QMainWindow):
         self.theme_system.triggered.connect(lambda: self.set_theme(ThemeMode.SYSTEM))
         self.theme_light.triggered.connect(lambda: self.set_theme(ThemeMode.LIGHT))
         self.theme_dark.triggered.connect(lambda: self.set_theme(ThemeMode.DARK))
+        self.project_homepage_action.triggered.connect(self._open_project_homepage)
 
     def retranslate_ui(self) -> None:
         tr = self.translations.text
@@ -832,6 +861,8 @@ class MainWindow(QMainWindow):
         self.theme_system.setText(tr("theme.system"))
         self.theme_light.setText(tr("theme.light"))
         self.theme_dark.setText(tr("theme.dark"))
+        self.about_menu.setTitle(tr("about.menu"))
+        self.project_homepage_action.setText(tr("about.homepage"))
         self.language_zh.setChecked(self.translations.locale == "zh_CN")
         self.language_en.setChecked(self.translations.locale == "en_US")
         restored_mode = self.output_mode.property("restoredMode")
@@ -917,18 +948,20 @@ class MainWindow(QMainWindow):
         for playlist in result.playlists:
             row = self.playlist_table.rowCount()
             self.playlist_table.insertRow(row)
-            values = (
-                playlist.stem,
-                format_ticks(int(playlist.duration_90k)),
-                str(len(playlist.play_items)),
-                str(len(playlist.marks)),
-                str(playlist.score),
-                playlist.confidence.value,
+            values: tuple[tuple[str, int | None], ...] = (
+                (playlist.stem, None),
+                (format_ticks(int(playlist.duration_90k)), int(playlist.duration_90k)),
+                (str(len(playlist.play_items)), len(playlist.play_items)),
+                (str(len(playlist.marks)), len(playlist.marks)),
+                (str(playlist.score), playlist.score),
+                (playlist.confidence.value, None),
             )
-            for column, text in enumerate(values):
-                item = QTableWidgetItem(text)
-                if column in {2, 3, 4}:
-                    item.setData(Qt.ItemDataRole.DisplayRole, int(text))
+            for column, (text, sort_value) in enumerate(values):
+                item = (
+                    NumericTableWidgetItem(text, sort_value)
+                    if sort_value is not None
+                    else QTableWidgetItem(text)
+                )
                 self.playlist_table.setItem(row, column, item)
         self.playlist_table.setSortingEnabled(True)
         self._record_issues(result.issues)
@@ -2046,7 +2079,7 @@ class MainWindow(QMainWindow):
                 item = QTableWidgetItem(text)
                 item.setData(Qt.ItemDataRole.UserRole, str(asset.path))
                 if column == 1:
-                    item.setToolTip(str(asset.path))
+                    item.setToolTip(asset.path.name)
                 self.mapping_table.setItem(row, column, item)
             self._install_offset_control(row, asset.path, offset_ms)
         self._resize_mapping_columns()
@@ -2120,6 +2153,7 @@ class MainWindow(QMainWindow):
         spin.setRange(-3_600_000, 3_600_000)
         spin.setSuffix(" ms")
         spin.setKeyboardTracking(False)
+        spin.setAccelerated(True)
         self._set_compact_offset_width(spin)
         spin.setValue(value_ms)
         spin.valueChanged.connect(
@@ -2156,7 +2190,10 @@ class MainWindow(QMainWindow):
             status.setText(self.translations.text("mapping.locked"))
         self.mapping_dirty = True
         self._invalidate_preflight()
-        self._schedule_mapping_preflight()
+
+    @Slot()
+    def _open_project_homepage(self) -> None:
+        self._url_opener(PROJECT_HOMEPAGE)
 
     @Slot()
     def remove_subtitles(self) -> None:

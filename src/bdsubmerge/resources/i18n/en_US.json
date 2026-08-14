@@ -1,5 +1,5 @@
 {
-  "app.title": "BDSubMerge - Blu-ray Subtitle Merge",
+  "app.title": "BDSubMerge",
   "path.label": "Blu-ray path",
   "path.choose": "Choose",
   "path.scan": "Rescan",
@@ -114,6 +114,8 @@
   "settings.language": "Language",
   "settings.theme": "Theme",
   "settings.menu": "Settings",
+  "about.menu": "About",
+  "about.homepage": "Project homepage",
   "language.zh": "简体中文",
   "language.en": "English",
   "theme.system": "System",

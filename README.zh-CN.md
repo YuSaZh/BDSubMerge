@@ -6,7 +6,7 @@ BDSubMerge 是一款桌面端 BDMV 原盘字幕合并工具。它只读取 BDMV 
 将按集排列的 ASS、SSA、SRT 或 Blu-ray PGS SUP 字幕映射到 MPLS 播放时间线，并通过
 预检和事务写入生成外挂字幕。
 
-> 当前状态：`v1.0.2-beta.3` 已提供 Windows x64 与 Linux x86_64 测试版；`v1.0.1` 仍为
+> 当前状态：`v1.0.2-beta.4` 已提供 Windows x64 与 Linux x86_64 测试版；`v1.0.1` 仍为
 > 稳定版。测试版的精确提交已通过 CI 和两个平台的原生打包验证。
 
 ## 已实现能力
@@ -23,12 +23,12 @@ BDSubMerge 是一款桌面端 BDMV 原盘字幕合并工具。它只读取 BDMV 
 ## 快速开始
 
 如需测试最新修复，请从
-[`v1.0.2-beta.3` 预发布版](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.2-beta.3)
+[`v1.0.2-beta.4` 预发布版](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.2-beta.4)
 下载对应平台的软件包和 SHA-256 文件：
 
-- Windows x64：`BDSubMerge-1.0.2-beta.3-windows-x64.zip`，完整解压后运行
+- Windows x64：`BDSubMerge-1.0.2-beta.4-windows-x64.zip`，完整解压后运行
   `BDSubMerge.exe`；
-- Linux x86_64：`BDSubMerge-1.0.2-beta.3-linux-x86_64.tar.gz`，解压后在图形化 X11
+- Linux x86_64：`BDSubMerge-1.0.2-beta.4-linux-x86_64.tar.gz`，解压后在图形化 X11
   桌面会话中运行 `BDSubMerge/BDSubMerge`。
 
 不要移动或删除可执行文件同目录中的 `_internal` 文件夹。Windows 稳定版仍可从

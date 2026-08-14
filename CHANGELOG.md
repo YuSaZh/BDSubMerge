@@ -4,6 +4,22 @@ All notable changes to BDSubMerge are recorded here.
 
 ## Unreleased
 
+## 1.0.2-beta.4 - 2026-08-14
+
+### Added
+
+- Added an About menu with a project homepage link and a non-interactive `@YuSaZh` author entry.
+
+### Changed
+
+- Simplified the window title to `BDSubMerge` in both interface languages.
+- Subtitle filename tooltips now show the complete filename without exposing the containing path.
+- Playlist duration, item count, chapter count, and recommendation score now use explicit numeric
+  sort keys instead of text ordering.
+- Batch and per-subtitle offset spin buttons now repeat with acceleration while held.
+- Per-subtitle offset edits now invalidate the current preflight without automatically starting a
+  new preflight run.
+
 ## 1.0.2-beta.3 - 2026-08-14
 
 ### Changed

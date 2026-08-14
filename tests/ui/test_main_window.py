@@ -3,7 +3,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QItemSelectionModel, QSettings, Qt
+from PySide6.QtCore import QItemSelectionModel, QSettings, Qt, QUrl
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -32,6 +32,7 @@ from bdsubmerge.domain.models import (
     PlayItemInfo,
     PlaylistConfidence,
     PlaylistInfo,
+    PlaylistMarkInfo,
     ReferenceStatus,
 )
 from bdsubmerge.domain.timebase import MediaTick90k
@@ -390,11 +391,33 @@ def test_window_defaults_to_chinese_and_switches_to_english(
     window = MainWindow(settings=_settings(tmp_path))
     qtbot.addWidget(window)
 
+    assert window.windowTitle() == "BDSubMerge"
     assert window.path_label.text() == "原盘路径"
+    assert window.menuBar().actions()[-2].menu() is window.settings_menu
+    assert window.menuBar().actions()[-1].menu() is window.about_menu
+    assert window.about_menu.title() == "关于"
+    assert window.project_homepage_action.text() == "项目主页"
+    assert window.project_homepage_action.isEnabled()
+    assert window.author_action.text() == "@YuSaZh"
+    assert not window.author_action.isEnabled()
+
+    opened_urls: list[str] = []
+
+    def open_url(url: QUrl) -> bool:
+        opened_urls.append(url.toString())
+        return True
+
+    window._url_opener = open_url
+    window.project_homepage_action.trigger()
+
+    assert opened_urls == ["https://github.com/YuSaZh/BDSubMerge"]
 
     window.set_language("en_US")
 
+    assert window.windowTitle() == "BDSubMerge"
     assert window.path_label.text() == "Blu-ray path"
+    assert window.about_menu.title() == "About"
+    assert window.project_homepage_action.text() == "Project homepage"
     assert window.preflight_summary.toPlainText() == "Not yet checked"
     assert window.settings.value("ui/language") == "en_US"
 
@@ -424,6 +447,47 @@ def test_scan_result_populates_playlist_and_exact_jriver_path(
     assert window.playlist_table.item(0, 0).text() == "00001"
     assert window.selected_playlist == result.playlists[0]
     assert window.output_path.text() == str(result.layout.index_bdmv_path.with_suffix(".ass"))
+
+
+def test_playlist_chapters_and_scores_sort_numerically(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    window = MainWindow(settings=_settings(tmp_path))
+    qtbot.addWidget(window)
+    scan = _scan_result(tmp_path)
+    assert scan.layout is not None
+    specifications = (
+        ("00001", 28, 62),
+        ("00002", 7, 8),
+        ("00003", 62, 7),
+        ("00004", 8, 28),
+    )
+    playlists = tuple(
+        replace(
+            scan.playlists[0],
+            path=scan.layout.playlist_path / f"{stem}.mpls",
+            stem=stem,
+            marks=tuple(
+                PlaylistMarkInfo(index, 1, 0, index, MediaTick90k(index * 2))
+                for index in range(chapters)
+            ),
+            score=score,
+        )
+        for stem, score, chapters in specifications
+    )
+    window._scan_finished(ScanResult(scan.layout, playlists))
+
+    window.playlist_table.sortItems(4, Qt.SortOrder.AscendingOrder)
+    assert [
+        int(window.playlist_table.item(row, 4).text())
+        for row in range(window.playlist_table.rowCount())
+    ] == [7, 8, 28, 62]
+
+    window.playlist_table.sortItems(3, Qt.SortOrder.AscendingOrder)
+    assert [
+        int(window.playlist_table.item(row, 3).text())
+        for row in range(window.playlist_table.rowCount())
+    ] == [7, 8, 28, 62]
 
 
 def test_filter_and_error_details_are_non_modal(qtbot: QtBot, tmp_path: Path) -> None:
@@ -1886,7 +1950,7 @@ def test_mapping_filename_tooltip_and_chinese_issue_text(
     qtbot.waitUntil(lambda: window.mapping_table.viewport().width() > 1_000)
     window._resize_mapping_columns()
 
-    assert window.mapping_table.item(0, 1).toolTip() == str(subtitle)
+    assert window.mapping_table.item(0, 1).toolTip() == subtitle.name
     filename_width = window.mapping_table.fontMetrics().horizontalAdvance(subtitle.name)
     assert window.mapping_table.columnWidth(1) < filename_width + 24
     assert (
@@ -2126,7 +2190,7 @@ def test_project_mapping_uses_current_offset_before_repreflight(
     assert saved[0].locked is True
 
 
-def test_row_offset_spin_updates_integer_ticks_and_schedules_repreflight(
+def test_row_offset_spin_updates_integer_ticks_without_repreflight(
     qtbot: QtBot,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2140,6 +2204,8 @@ def test_row_offset_spin_updates_integer_ticks_and_schedules_repreflight(
     )
     spin = window.mapping_table.cellWidget(0, 7)
     assert isinstance(spin, QSpinBox)
+    assert window.offset_spin.isAccelerated()
+    assert spin.isAccelerated()
     assert spin.width() <= spin.fontMetrics().horizontalAdvance("-3600000 ms") + 40
 
     spin.setValue(125)
@@ -2149,7 +2215,7 @@ def test_row_offset_spin_updates_integer_ticks_and_schedules_repreflight(
     assert window.mapping_table.item(0, 9).text() == "已锁定"
     assert subtitle in window.locked_subtitles
     assert window.prepared is None
-    assert scheduled == [None]
+    assert scheduled == []
 
 
 def test_invalidation_during_preflight_requests_a_fresh_run(
