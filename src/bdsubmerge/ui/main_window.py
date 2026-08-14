@@ -493,6 +493,7 @@ class MainWindow(QMainWindow):
         self.output_targets_table.horizontalHeader().setMinimumSectionSize(32)
         self.output_targets_table.horizontalHeader().setStretchLastSection(False)
         self.output_targets_table.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.output_targets_table.setWordWrap(False)
         self.output_targets_table.setMaximumHeight(130)
         output_target_actions = QHBoxLayout()
         self.add_output_target_button = QPushButton()
@@ -2123,13 +2124,17 @@ class MainWindow(QMainWindow):
                 if isinstance(widget, QComboBox):
                     texts.append(str(widget.currentData() or widget.currentText()))
                 elif widget is not None:
-                    widget_width = max(widget_width, widget.sizeHint().width())
+                    widget_width = max(
+                        widget_width,
+                        widget.sizeHint().width(),
+                        widget.minimumWidth(),
+                    )
             content_width = max(
                 (metrics.horizontalAdvance(text) for text in texts),
                 default=0,
             )
             padding = 42 if column in combo_columns else 24
-            width = max(content_width + padding, widget_width)
+            width = max(content_width + padding, widget_width + 4)
             if maximum_widths is not None and column in maximum_widths:
                 width = min(width, maximum_widths[column])
                 width = max(width, metrics.horizontalAdvance(header_text) + 24)

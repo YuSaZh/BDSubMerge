@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bdsubmerge"
-version = "1.0.2b4"
+version = "1.0.2"
 description = "Build external subtitles against a Blu-ray MPLS timeline"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -12,7 +12,7 @@ license = { file = "LICENSE" }
 authors = [{ name = "YuSaZh", email = "aimescc@icloud.com" }]
 keywords = ["blu-ray", "bdmv", "mpls", "subtitle", "ass", "pgs"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Environment :: Win32 (MS Windows)",
   "Environment :: X11 Applications :: Qt",
   "License :: OSI Approved :: MIT License",

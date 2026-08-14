@@ -4,6 +4,30 @@ All notable changes to BDSubMerge are recorded here.
 
 ## Unreleased
 
+## 1.0.2 - 2026-08-14
+
+### Added
+
+- Added a native Linux x86_64 desktop package alongside the Windows x64 release.
+- Added mouse-wheel timeline zoom, user boundary editing, inline per-subtitle offsets, an About
+  menu, and complete bilingual desktop diagnostics.
+
+### Changed
+
+- Refined the resizable subtitle mapping workspace, compact column sizing, chapter boundary
+  selectors, timeline labels, output target summaries, and optional report controls.
+- Playlist duration, item count, chapter count, and recommendation score now sort numerically.
+- Manual boundary and per-subtitle offset edits invalidate stale preflight results without
+  automatically rerunning preflight after every adjustment.
+- Renamed the implementation task document to `ProjectPlan.md`.
+
+### Fixed
+
+- Kept inline offset spin controls and their arrow buttons fully inside the offset column.
+- Disabled wrapping in the output target path column so long Windows paths use the full available
+  width before being elided.
+- Improved Simplified Chinese explanations for merge events omitted before timeline zero.
+
 ## 1.0.2-beta.4 - 2026-08-14
 
 ### Added

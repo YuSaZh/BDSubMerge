@@ -7,9 +7,8 @@ MPLS timeline. It reads BDMV metadata without modifying the disc, maps ASS/SSA/S
 Blu-ray PGS SUP sources to playlist intervals, and writes external subtitles through
 preflighted, transactional output targets.
 
-> Status: `v1.0.2-beta.4` is available for Windows x64 and Linux x86_64 testing; `v1.0.1` remains
-> the stable release. The beta's exact commit passes CI and native package verification on both
-> platforms.
+> Status: `v1.0.2` is the current stable release for Windows x64 and Linux x86_64. Its exact
+> commit passes CI and native package verification on both platforms.
 
 ## What It Does
 
@@ -26,15 +25,14 @@ preflighted, transactional output targets.
 ## Quick Start
 
 Download the package and matching SHA-256 file from the
-[`v1.0.2-beta.4` prerelease](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.2-beta.4):
+[`v1.0.2` release](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.2):
 
-- Windows x64: `BDSubMerge-1.0.2-beta.4-windows-x64.zip`; extract it completely and start
+- Windows x64: `BDSubMerge-1.0.2-windows-x64.zip`; extract it completely and start
   `BDSubMerge.exe`.
-- Linux x86_64: `BDSubMerge-1.0.2-beta.4-linux-x86_64.tar.gz`; extract it and start
+- Linux x86_64: `BDSubMerge-1.0.2-linux-x86_64.tar.gz`; extract it and start
   `BDSubMerge/BDSubMerge` from a graphical X11 desktop session.
 
-Keep each package's `_internal` directory beside the executable. For the stable Windows build, use
-the [`v1.0.1` release](https://github.com/YuSaZh/BDSubMerge/releases/tag/v1.0.1).
+Keep each package's `_internal` directory beside the executable.
 
 The CLI is available in an installed environment:
 

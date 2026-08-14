@@ -866,6 +866,7 @@ def test_output_target_table_shows_complete_localized_summary(
     path_item = window.output_targets_table.item(0, 2)
     assert path_item.toolTip() == str(target)
     assert window.output_targets_table.textElideMode() is Qt.TextElideMode.ElideRight
+    assert not window.output_targets_table.wordWrap()
     assert window.output_targets_table.columnWidth(2) < (
         window.output_targets_table.fontMetrics().horizontalAdvance(str(target)) + 24
     )
@@ -2207,6 +2208,7 @@ def test_row_offset_spin_updates_integer_ticks_without_repreflight(
     assert window.offset_spin.isAccelerated()
     assert spin.isAccelerated()
     assert spin.width() <= spin.fontMetrics().horizontalAdvance("-3600000 ms") + 40
+    assert window.mapping_table.columnWidth(7) >= spin.width() + 4
 
     spin.setValue(125)
 
