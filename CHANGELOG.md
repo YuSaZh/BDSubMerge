@@ -4,6 +4,20 @@ All notable changes to BDSubMerge are recorded here.
 
 ## Unreleased
 
+## 1.0.2-beta.3 - 2026-08-14
+
+### Changed
+
+- Double-clicking the timeline now adds a user boundary and invalidates the current preflight
+  without immediately starting another preflight run.
+- Subtitle filenames and output target paths now use the remaining visible table width, elide only
+  when necessary, and retain their complete values in tooltips instead of forcing horizontal
+  scrolling.
+- Timeline subtitle labels now fill the available episode segment width and are recalculated after
+  mouse-wheel zoom.
+- Moved the batch-offset input beside its toolbar action and added an inline millisecond spin box
+  with step buttons for each subtitle row.
+
 ## 1.0.2-beta.2 - 2026-08-14
 
 ### Added

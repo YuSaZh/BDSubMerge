@@ -25,6 +25,7 @@ from PySide6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
+    QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -150,7 +151,16 @@ from .timeline import (
 from .translations import TranslationCatalog
 
 
-class SubtitleMappingTable(QTableWidget):
+class ResponsiveTableWidget(QTableWidget):
+    resized = Signal()
+
+    @override
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.resized.emit()
+
+
+class SubtitleMappingTable(ResponsiveTableWidget):
     rows_reordered = Signal(object, int)
 
     @override
@@ -369,6 +379,11 @@ class MainWindow(QMainWindow):
         self.move_subtitle_down_button = QPushButton()
         self.natural_sort_button = QPushButton()
         self.offset_button = QPushButton()
+        self.offset_spin = QSpinBox()
+        self.offset_spin.setRange(-3_600_000, 3_600_000)
+        self.offset_spin.setSuffix(" ms")
+        self.offset_spin.setKeyboardTracking(False)
+        self._set_compact_offset_width(self.offset_spin)
         self.lock_button = QPushButton()
         self.reset_mapping_button = QPushButton()
         subtitle_toolbar.addWidget(self.add_subtitle_button)
@@ -377,6 +392,7 @@ class MainWindow(QMainWindow):
         subtitle_toolbar.addWidget(self.move_subtitle_up_button)
         subtitle_toolbar.addWidget(self.move_subtitle_down_button)
         subtitle_toolbar.addWidget(self.natural_sort_button)
+        subtitle_toolbar.addWidget(self.offset_spin)
         subtitle_toolbar.addWidget(self.offset_button)
         subtitle_toolbar.addWidget(self.lock_button)
         subtitle_toolbar.addWidget(self.reset_mapping_button)
@@ -398,7 +414,7 @@ class MainWindow(QMainWindow):
             QHeaderView.ResizeMode.Interactive
         )
         self.mapping_table.horizontalHeader().setMinimumSectionSize(32)
-        self.mapping_table.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.mapping_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.mapping_table.setMinimumHeight(190)
         subtitle_layout.addLayout(subtitle_toolbar)
         subtitle_layout.addWidget(self.mapping_table)
@@ -441,7 +457,7 @@ class MainWindow(QMainWindow):
         output_editor = QVBoxLayout()
         output_editor.addLayout(output_form)
         self.output_targets_label = QLabel()
-        self.output_targets_table = QTableWidget(0, 7)
+        self.output_targets_table = ResponsiveTableWidget(0, 7)
         self.output_targets_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
         )
@@ -456,7 +472,7 @@ class MainWindow(QMainWindow):
         )
         self.output_targets_table.horizontalHeader().setMinimumSectionSize(32)
         self.output_targets_table.horizontalHeader().setStretchLastSection(False)
-        self.output_targets_table.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.output_targets_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.output_targets_table.setMaximumHeight(130)
         output_target_actions = QHBoxLayout()
         self.add_output_target_button = QPushButton()
@@ -517,13 +533,7 @@ class MainWindow(QMainWindow):
         acceptance_layout.setContentsMargins(0, 0, 0, 0)
         acceptance_layout.addWidget(self.accept_low_confidence)
         acceptance_layout.addWidget(self.accept_script_info_conflicts)
-        self.offset_label = QLabel()
-        self.offset_spin = QSpinBox()
-        self.offset_spin.setRange(-3_600_000, 3_600_000)
-        self.offset_spin.setSuffix(" ms")
         advanced_layout.addLayout(acceptance_layout)
-        advanced_layout.addWidget(self.offset_label)
-        advanced_layout.addWidget(self.offset_spin)
         self.project_notes_label = QLabel()
         self.project_notes = QLineEdit()
         advanced_layout.addWidget(self.project_notes_label)
@@ -630,6 +640,7 @@ class MainWindow(QMainWindow):
             self.select_timeline_episode_from_table
         )
         self.mapping_table.rows_reordered.connect(self._mapping_table_rows_reordered)
+        self.mapping_table.resized.connect(self._resize_mapping_columns)
         self.output_mode.currentIndexChanged.connect(self.output_mode_changed)
         self.output_browse.clicked.connect(self.choose_output)
         self.output_directory_browse.clicked.connect(self.choose_output_directory)
@@ -641,6 +652,7 @@ class MainWindow(QMainWindow):
         self.output_targets_table.itemSelectionChanged.connect(
             self.select_output_target
         )
+        self.output_targets_table.resized.connect(self._resize_output_target_columns)
         self.add_output_target_button.clicked.connect(self.add_output_target)
         self.remove_output_target_button.clicked.connect(self.remove_output_target)
         self.report_enabled.toggled.connect(self._report_configuration_changed)
@@ -662,7 +674,7 @@ class MainWindow(QMainWindow):
         self.cancel_button.clicked.connect(self.cancel_active_task)
         self.details_button.toggled.connect(self.error_panel.setVisible)
         self.advanced_toggle.toggled.connect(self.toggle_advanced)
-        self.timeline.user_boundary_added.connect(self._user_boundary_changed)
+        self.timeline.user_boundary_added.connect(self._user_boundary_added)
         self.timeline.user_boundary_moved.connect(self._user_boundary_changed)
         self.timeline.user_boundary_deleted.connect(self._user_boundary_deleted)
         self.timeline.episode_selected.connect(self.select_mapping_row_from_timeline)
@@ -811,7 +823,6 @@ class MainWindow(QMainWindow):
         self.accept_script_info_conflicts.setText(
             tr("advanced.accept_script_info_conflicts")
         )
-        self.offset_label.setText(tr("advanced.offset"))
         self.project_notes_label.setText(tr("project.notes"))
         self.settings_menu.setTitle(tr("settings.menu"))
         self.language_menu.setTitle(tr("settings.language"))
@@ -2037,24 +2048,40 @@ class MainWindow(QMainWindow):
                 if column == 1:
                     item.setToolTip(str(asset.path))
                 self.mapping_table.setItem(row, column, item)
+            self._install_offset_control(row, asset.path, offset_ms)
         self._resize_mapping_columns()
 
     def _resize_mapping_columns(self) -> None:
-        self._resize_table_columns(self.mapping_table, combo_columns=(4, 5))
+        self._resize_table_columns(
+            self.mapping_table,
+            flexible_column=1,
+            combo_columns=(4, 5),
+            maximum_widths={10: 180},
+        )
 
     def _resize_output_target_columns(self) -> None:
-        self._resize_table_columns(self.output_targets_table)
+        self._resize_table_columns(
+            self.output_targets_table,
+            flexible_column=2,
+        )
 
     @staticmethod
     def _resize_table_columns(
         table: QTableWidget,
         *,
+        flexible_column: int,
         combo_columns: tuple[int, ...] = (),
+        maximum_widths: dict[int, int] | None = None,
     ) -> None:
         metrics = table.fontMetrics()
+        widths: dict[int, int] = {}
         for column in range(table.columnCount()):
             header = table.horizontalHeaderItem(column)
-            texts = [header.text()] if header is not None else []
+            header_text = header.text() if header is not None else ""
+            if column == flexible_column:
+                continue
+            texts = [header_text]
+            widget_width = 0
             for row in range(table.rowCount()):
                 item = table.item(row, column)
                 if item is not None:
@@ -2062,12 +2089,74 @@ class MainWindow(QMainWindow):
                 widget = table.cellWidget(row, column)
                 if isinstance(widget, QComboBox):
                     texts.append(str(widget.currentData() or widget.currentText()))
+                elif widget is not None:
+                    widget_width = max(widget_width, widget.sizeHint().width())
             content_width = max(
                 (metrics.horizontalAdvance(text) for text in texts),
                 default=0,
             )
             padding = 42 if column in combo_columns else 24
-            table.setColumnWidth(column, content_width + padding)
+            width = max(content_width + padding, widget_width)
+            if maximum_widths is not None and column in maximum_widths:
+                width = min(width, maximum_widths[column])
+                width = max(width, metrics.horizontalAdvance(header_text) + 24)
+            widths[column] = width
+            table.setColumnWidth(column, width)
+
+        flexible_header = table.horizontalHeaderItem(flexible_column)
+        flexible_minimum = max(
+            96,
+            metrics.horizontalAdvance(
+                flexible_header.text() if flexible_header is not None else ""
+            )
+            + 24,
+        )
+        available = table.viewport().width()
+        flexible_width = max(flexible_minimum, available - sum(widths.values()))
+        table.setColumnWidth(flexible_column, flexible_width)
+
+    def _install_offset_control(self, row: int, path: Path, value_ms: int) -> None:
+        spin = QSpinBox(self.mapping_table)
+        spin.setRange(-3_600_000, 3_600_000)
+        spin.setSuffix(" ms")
+        spin.setKeyboardTracking(False)
+        self._set_compact_offset_width(spin)
+        spin.setValue(value_ms)
+        spin.valueChanged.connect(
+            lambda value, subtitle_path=path, table_row=row: self._row_offset_changed(
+                table_row,
+                subtitle_path,
+                value,
+            )
+        )
+        self.mapping_table.setCellWidget(row, 7, spin)
+
+    @staticmethod
+    def _set_compact_offset_width(spin: QSpinBox) -> None:
+        spin.setFixedWidth(spin.fontMetrics().horizontalAdvance("-3600000 ms") + 40)
+
+    def _set_offset_control_value(self, row: int, value_ms: int) -> None:
+        widget = self.mapping_table.cellWidget(row, 7)
+        if isinstance(widget, QSpinBox):
+            previous = widget.blockSignals(True)
+            widget.setValue(value_ms)
+            widget.blockSignals(previous)
+        item = self.mapping_table.item(row, 7)
+        if item is not None:
+            item.setText(f"{value_ms} ms")
+
+    def _row_offset_changed(self, row: int, path: Path, value_ms: int) -> None:
+        if self.active_task is not None:
+            return
+        self.subtitle_offsets_90k[path] = value_ms * 90
+        self.locked_subtitles.add(path)
+        self._set_offset_control_value(row, value_ms)
+        status = self.mapping_table.item(row, 9)
+        if status is not None:
+            status.setText(self.translations.text("mapping.locked"))
+        self.mapping_dirty = True
+        self._invalidate_preflight()
+        self._schedule_mapping_preflight()
 
     @Slot()
     def remove_subtitles(self) -> None:
@@ -2270,13 +2359,15 @@ class MainWindow(QMainWindow):
     def apply_batch_offset(self) -> None:
         value_ms = self.offset_spin.value()
         value_90k = value_ms * 90
-        rows = {item.row() for item in self.mapping_table.selectedItems()}
+        rows = {
+            index.row()
+            for index in self.mapping_table.selectionModel().selectedRows(0)
+        }
         for row in rows:
             path = self._row_path(row)
-            item = self.mapping_table.item(row, 7)
-            if path is not None and item is not None:
+            if path is not None:
                 self.subtitle_offsets_90k[path] = value_90k
-                item.setText(f"{value_ms} ms")
+                self._set_offset_control_value(row, value_ms)
                 if value_90k != 0:
                     self.locked_subtitles.add(path)
                     status = self.mapping_table.item(row, 9)
@@ -2303,6 +2394,7 @@ class MainWindow(QMainWindow):
                     offset_item = self.mapping_table.item(row, 7)
                     if offset_item is not None:
                         offset_item.setText("0 ms")
+                    self._set_offset_control_value(row, 0)
                     episode_id = self._episode_id_for_row(row)
                     self.restored_mapping_locks = tuple(
                         item
@@ -2968,6 +3060,12 @@ class MainWindow(QMainWindow):
         self.timeline.set_selected_episode(episode_id)
 
     @Slot(str, int)
+    def _user_boundary_added(self, boundary_id: str, time_90k: int) -> None:
+        del boundary_id, time_90k
+        self.mapping_dirty = True
+        self._invalidate_preflight()
+
+    @Slot(str, int)
     def _user_boundary_changed(self, boundary_id: str, time_90k: int) -> None:
         current_locks = self._mapping_locks()
         updated: list[MappingSnapshot] = []
@@ -3126,6 +3224,10 @@ class MainWindow(QMainWindow):
                 item = self.mapping_table.item(row, column)
                 if item is not None:
                     item.setText(text)
+            self._set_offset_control_value(
+                row,
+                int(mapping.manual_offset_90k) // 90,
+            )
             self._install_mapping_boundary_controls(
                 row,
                 mapping.episode_id,
@@ -3584,7 +3686,7 @@ class MainWindow(QMainWindow):
             widget.setEnabled(report_enabled)
         self.accept_low_confidence.setEnabled(idle)
         self.accept_script_info_conflicts.setEnabled(idle)
-        self.offset_spin.setEnabled(idle)
+        self.offset_spin.setEnabled(has_subtitle_rows and has_mapping)
         self.project_notes.setEnabled(idle)
         self.advanced_toggle.setEnabled(idle)
         self.open_button.setEnabled(idle and project_ready)

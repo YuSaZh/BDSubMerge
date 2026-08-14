@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QItemSelectionModel, QSettings, Qt
-from PySide6.QtWidgets import QComboBox, QFileDialog, QHeaderView, QMessageBox
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QHeaderView,
+    QMessageBox,
+    QSpinBox,
+)
 from pytestqt.qtbot import QtBot
 
 from bdsubmerge.application import (
@@ -795,9 +801,13 @@ def test_output_target_table_shows_complete_localized_summary(
     )
     path_item = window.output_targets_table.item(0, 2)
     assert path_item.toolTip() == str(target)
-    assert window.output_targets_table.textElideMode() is Qt.TextElideMode.ElideNone
-    assert window.output_targets_table.columnWidth(2) >= (
+    assert window.output_targets_table.textElideMode() is Qt.TextElideMode.ElideRight
+    assert window.output_targets_table.columnWidth(2) < (
         window.output_targets_table.fontMetrics().horizontalAdvance(str(target)) + 24
+    )
+    assert (
+        window.output_targets_table.horizontalHeader().length()
+        <= window.output_targets_table.viewport().width()
     )
 
 
@@ -1725,13 +1735,21 @@ def test_adding_directory_preserves_manual_order_and_appends_naturally(
     )
 
 
-def test_user_boundaries_are_forwarded_and_invalidate_preflight(
-    qtbot: QtBot, tmp_path: Path
+def test_user_boundaries_are_forwarded_and_invalidate_without_repreflight(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     window = MainWindow(settings=_settings(tmp_path))
     qtbot.addWidget(window)
     window._scan_finished(_scan_result(tmp_path))
     window.prepared = PreparedMerge(None, None, None, None, ())
+    scheduled: list[None] = []
+    monkeypatch.setattr(
+        window,
+        "_schedule_mapping_preflight",
+        lambda: scheduled.append(None),
+    )
 
     boundary_id = window.timeline.add_user_boundary(450_000, "user:restored")
 
@@ -1744,6 +1762,9 @@ def test_user_boundaries_are_forwarded_and_invalidate_preflight(
     assert additional[0].user_created is True
     assert window.prepared is None
     assert window.mapping_dirty is True
+    assert scheduled == []
+    assert window.pending_preflight is False
+    assert window.mapping_preflight_timer.isActive() is False
 
 
 def test_deleting_user_boundary_drops_its_restored_lock(
@@ -1836,7 +1857,7 @@ def test_mapping_layout_is_resizable_and_report_options_are_collapsed(
         for column in range(window.mapping_table.columnCount())
     )
     assert window.mapping_table.horizontalHeaderItem(0).text() == "No."
-    assert window.mapping_table.textElideMode() is Qt.TextElideMode.ElideNone
+    assert window.mapping_table.textElideMode() is Qt.TextElideMode.ElideRight
     no_width = window.mapping_table.fontMetrics().horizontalAdvance("No.") + 24
     assert window.mapping_table.columnWidth(0) == no_width
     assert window.report_configuration.isHidden()
@@ -1852,15 +1873,26 @@ def test_mapping_filename_tooltip_and_chinese_issue_text(
 ) -> None:
     window = MainWindow(settings=_settings(tmp_path))
     qtbot.addWidget(window)
-    subtitle = tmp_path / "a very long subtitle filename.ass"
+    subtitle = tmp_path / (
+        "a very long subtitle filename that must yield space to mapping details "
+        "and remain available from its tooltip.ass"
+    )
     window.subtitle_result = LoadSubtitlesResult(
         (_subtitle_asset(subtitle, "utf-8"),), SubtitleFormat.ASS
     )
     window._populate_mapping_table()
+    window.resize(1_400, 1_000)
+    window.show()
+    qtbot.waitUntil(lambda: window.mapping_table.viewport().width() > 1_000)
+    window._resize_mapping_columns()
 
     assert window.mapping_table.item(0, 1).toolTip() == str(subtitle)
     filename_width = window.mapping_table.fontMetrics().horizontalAdvance(subtitle.name)
-    assert window.mapping_table.columnWidth(1) >= filename_width + 24
+    assert window.mapping_table.columnWidth(1) < filename_width + 24
+    assert (
+        window.mapping_table.horizontalHeader().length()
+        <= window.mapping_table.viewport().width()
+    )
     issue = ApplicationIssue(
         ApplicationSeverity.WARNING,
         "low_mapping_confidence",
@@ -2041,6 +2073,7 @@ def test_offset_and_lock_controls_require_an_existing_mapping(
     window._update_actions()
 
     assert window.offset_button.isEnabled() is False
+    assert window.offset_spin.isEnabled() is False
     assert window.lock_button.isEnabled() is False
 
 
@@ -2091,6 +2124,32 @@ def test_project_mapping_uses_current_offset_before_repreflight(
     saved = window._project_mappings()
     assert saved[0].manual_offset_90k == 11_250
     assert saved[0].locked is True
+
+
+def test_row_offset_spin_updates_integer_ticks_and_schedules_repreflight(
+    qtbot: QtBot,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, subtitle, _ = _prepared_mapping_window(qtbot, tmp_path)
+    scheduled: list[None] = []
+    monkeypatch.setattr(
+        window,
+        "_schedule_mapping_preflight",
+        lambda: scheduled.append(None),
+    )
+    spin = window.mapping_table.cellWidget(0, 7)
+    assert isinstance(spin, QSpinBox)
+    assert spin.width() <= spin.fontMetrics().horizontalAdvance("-3600000 ms") + 40
+
+    spin.setValue(125)
+
+    assert window.subtitle_offsets_90k[subtitle] == 11_250
+    assert window.mapping_table.item(0, 7).text() == "125 ms"
+    assert window.mapping_table.item(0, 9).text() == "已锁定"
+    assert subtitle in window.locked_subtitles
+    assert window.prepared is None
+    assert scheduled == [None]
 
 
 def test_invalidation_during_preflight_requests_a_fresh_run(

@@ -399,8 +399,18 @@ class TimelineView(QGraphicsView):
             if warnings:
                 tooltip += "\n" + "\n".join(dict.fromkeys(warnings))
             rectangle.setToolTip(tooltip)
-            if end - start >= 46:
-                label = scene.addText(episode.label[:18])
+            label_width = max(
+                0,
+                int((end - start) * abs(self.transform().m11())) - 8,
+            )
+            if label_width >= 32:
+                visible_label = self.fontMetrics().elidedText(
+                    episode.label,
+                    Qt.TextElideMode.ElideRight,
+                    label_width,
+                )
+                label = scene.addText(visible_label)
+                label.document().setDocumentMargin(0)
                 label.setFlag(
                     QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations,
                     True,
@@ -409,6 +419,7 @@ class TimelineView(QGraphicsView):
                 label.setPos(start + 4, 75)
                 label.setData(ITEM_KIND_ROLE, "episode")
                 label.setData(ITEM_ID_ROLE, episode.id)
+                label.setToolTip(tooltip)
             self._add_episode_handle(scene, episode, "start", start)
             self._add_episode_handle(scene, episode, "end", end)
 
@@ -561,6 +572,7 @@ class TimelineView(QGraphicsView):
         factor = 1.2 if next_step > self._zoom_step else 1 / 1.2
         self.scale(factor, 1.0)
         self._zoom_step = next_step
+        self._render_scene()
         self.zoom_changed.emit(self.zoom_percent)
         event.accept()
 

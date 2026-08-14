@@ -114,6 +114,38 @@ def test_episode_intervals_expose_gaps_conflicts_and_out_of_bounds(
     )
 
 
+def test_episode_label_uses_available_segment_width(qtbot: QtBot) -> None:
+    timeline = TimelineView()
+    timeline.resize(800, 200)
+    qtbot.addWidget(timeline)
+    timeline.show()
+    timeline.show_playlist(
+        _playlist(), item_label="Item", chapter_label="Chapter", empty_text="Empty"
+    )
+    full_label = "a-very-long-subtitle-filename-that-should-fill-the-segment-width.ass"
+    timeline.set_episodes(
+        (
+            TimelineEpisode(
+                "episode-1",
+                full_label,
+                0,
+                900_000,
+                0,
+                900_000,
+            ),
+        )
+    )
+
+    label = next(
+        item
+        for item in timeline.scene().items()
+        if isinstance(item, QGraphicsTextItem) and item.toolTip().startswith(full_label)
+    )
+
+    assert len(label.toPlainText()) > 18
+    assert label.boundingRect().width() <= timeline.viewport().width()
+
+
 def test_candidate_snapping_is_deterministic_and_can_be_disabled(
     qtbot: QtBot,
 ) -> None:
